@@ -7,9 +7,23 @@
     <title>Result Prediction</title>
 </head>
 
+<style>
+    .image-result {
+        padding: 0.5em;
+    }
+</style>
+
 <body>
-    <img src="http://127.0.0.1:5000/static/{{user_image}}" />
-    <h2>{{result}} - Accuracy : {{accuracy}}</h2>
+    <img src="{{query}}" style="width:200px" />
+    <p>Result class classification : {{result_class}}</p>
+    <div class="image" style="display:flex; flex-wrap: wrap;">
+        {% for i,label,distance in complete_all %}
+        <div class="image-result">
+            <p>{{label}} - {{distance}} </p>
+            <img src="{{i}}" style="width:300px" />
+        </div>
+        {%endfor%}
+    </div>
 
 </body>
 
