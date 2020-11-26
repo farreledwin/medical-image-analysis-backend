@@ -16,21 +16,112 @@ from tensorflow.python.keras.layers import Dense, Dropout, Conv2D, BatchNormaliz
 from tensorflow.python.keras.engine.input_layer import Input
 from tensorflow.python.keras.initializers import RandomNormal
 import pickle
-from app import app
+from tensorflow.keras.models import model_from_json
+import tensorflow as tf
+from tensorflow.keras.applications import ResNet50
+from tensorflow.keras.applications.resnet50 import preprocess_input
+from tensorflow.keras.applications import imagenet_utils
+from tensorflow.keras.preprocessing.image import img_to_array
+from imutils.object_detection import non_max_suppression
+import numpy as np
+import argparse
+import cv2
+from sklearn.cluster import MiniBatchKMeans
+import matplotlib.pyplot as plt
+from scipy.cluster.vq import *
+from sklearn import preprocessing
+import joblib
+import random
+import pickle
+from numpy import dot
+from numpy.linalg import norm
 import base64
+from app import app
 from flask import jsonify
-from flask import render_template
+
+train_datas, test_datas = [], []
+
+result_image = []
+result_relevant = []
+result_distances = []
+
+def init_dataset(data_list, dirpath):
+  for folder, subfolder, file in os.walk(dirpath):
+    dirname = folder.split(os.path.sep)[-1]
+    main_class = folder.split(os.path.sep)[-3]
+    for folder2, subfolder2, file2 in os.walk(folder):
+      if dirname == "train" or dirname == "validation":
+        continue
+      data_list.append({
+          "main_class": main_class,
+          "class" : dirname,
+          "path" : folder2,
+          "filenames" : file2
+      })
+  return data_list
+      
+def delete_class(datas, label):
+  for data in datas:
+    if data['class'] == label:
+      datas.remove(data)
+  return datab
+
+train_datas = init_dataset(train_datas, os.path.abspath(os.curdir +"/dataset/benign/train"))
+train_datas = init_dataset(train_datas,  os.path.abspath(os.curdir +"/dataset/malignant/train"))
+test_datas = init_dataset(test_datas, os.path.abspath(os.curdir +"/dataset/benign/validation"))
+test_datas = init_dataset(test_datas, os.path.abspath(os.curdir +"/dataset/malignant/validation"))
+
+count_train = 0
+for data in train_datas:
+  count_train = count_train + len(data['filenames'])
+  print(data)
+print("---")
+count_test = 0
+for data in test_datas:
+  count_test = count_test + len(data['filenames'])
+  print(data)
+
+print(count_train)
+print(count_test)
+
+x_train, y_train = [], []
+y_train_benign = []
+y_train_malignant = []
+y_test_benign = []
+y_test_malignant = []
+for data in train_datas:
+  for i, filename in enumerate(data['filenames'][:20]):
+    # if i == 50:
+    #   break
+    x_train.append(data['path'] + '/' + filename)
+    y_train.append(data['class'])
+    if data['main_class'] == 'Benign':
+      y_train_benign.append(data['class'])
+    else:
+      y_train_malignant.append(data['class'])
+x_test, y_test = [], []
+for data in test_datas:
+  for i, filename in enumerate(data['filenames'][:20]):
+    # if i == 50:
+    #   break
+    x_test.append(data['path'] + '/' + filename)
+    y_test.append(data['class'])
+    if data['main_class'] == 'Benign':
+      y_test_benign.append(data['class'])
+    else:
+      y_test_malignant.append(data['class'])
+
 
 def getDescriptors(sift, img):
     kp, des = sift.detectAndCompute(img, None)
     return des
 
 def readImage(img_path):
-    # print(img_path)
-    img = cv2.imread(img_path, 0)
+    img = cv2.imread(img_path,0)
+    # img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)    
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
     img = clahe.apply(img)
-    return cv2.resize(img, (300,300))
+    return cv2.resize(img,(300,300))
 
 def vstackDescriptors(descriptor_list):
     descriptors = np.array(descriptor_list[0])
@@ -46,6 +137,7 @@ def clusterDescriptors(descriptors, no_clusters):
 def extractFeatures(kmeans, descriptor_list, image_count, no_clusters):
     im_features = np.array([np.zeros(no_clusters) for i in range(image_count)])
     for i in range(image_count):
+      print(i)
       try:
         for j in range(len(descriptor_list[i])):
             feature = descriptor_list[i][j]
@@ -70,13 +162,6 @@ def plotHistogram(im_features, no_clusters):
     plt.xticks(x_scalar + 0.4, x_scalar)
     plt.show()
 
-def load_pickle(path):
-  infile = open(path,'rb')
-  loaded_pickle = pickle.load(infile)
-  infile.close()
-  return loaded_pickle
-
-  
 def load_model(json_path, weight_path):
   json_file = open(json_path, 'r') #.json
   loaded_model_json = json_file.read()
@@ -86,256 +171,131 @@ def load_model(json_path, weight_path):
   print("Loaded model from disk")
   return loaded_model
 
-from tensorflow.python.keras.models import model_from_json
-import tensorflow as tf
-from tensorflow.keras.applications import ResNet50
-from tensorflow.keras.applications.resnet50 import preprocess_input
-from tensorflow.keras.applications import imagenet_utils
-from tensorflow.keras.preprocessing.image import img_to_array
-from imutils.object_detection import non_max_suppression
-import numpy as np
-import argparse
-import cv2
-import matplotlib.pyplot as plt
-from scipy.cluster.vq import *
+def load_pickle(path):
+  infile = open(path,'rb')
+  loaded_pickle = pickle.load(infile)
+  infile.close()
+  return loaded_pickle
 
+model = load_model(os.path.abspath(os.curdir + "/breakhist_biner_io/earlystopping/model-all-classification.json"),
+                     os.path.abspath(os.curdir + "/breakhist_biner_io/earlystopping/model-all-classfication-weights.h5"))
+scale = load_pickle(os.path.abspath(os.curdir + "/breakhist_biner_io/earlystopping/scale"))
+kmeans = load_pickle(os.path.abspath(os.curdir + "/breakhist_biner_io/earlystopping/kmeans"))
+
+
+benign_model = load_model(os.path.abspath(os.curdir + "/breakhist_4_kelas_alldata_benign_stain/model_breakhist_4_subclass_benign.json"),
+                     os.path.abspath(os.curdir + "/breakhist_4_kelas_alldata_benign_stain/model_breakhist_4_subclass_benign.h5"))
+benign_scale = load_pickle(os.path.abspath(os.curdir + "/breakhist_4_kelas_alldata_benign_stain/scale"))
+benign_kmeans = load_pickle(os.path.abspath(os.curdir + "/breakhist_4_kelas_alldata_benign_stain/kmeans"))
+
+malignant_model = load_model(os.path.abspath(os.curdir + "/breakhist_4_kelas_alldata_malignant_stain/model_breakhist_4class_malignant_farrel.json"),
+                     os.path.abspath(os.curdir + "/breakhist_4_kelas_alldata_malignant_stain/model_breakhist_4class_malignant_farrel.h5"))
+malignant_scale = load_pickle(os.path.abspath(os.curdir + "/breakhist_4_kelas_alldata_malignant_stain/scale"))
+malignant_kmeans = load_pickle(os.path.abspath(os.curdir + "/breakhist_4_kelas_alldata_malignant_stain/kmeans"))
+
+num_words = 800
 sift = cv2.xfeatures2d.SIFT_create()
 
-main_kmeans = load_pickle(os.path.abspath(os.curdir + "/!!model/!!model/main class model/main_class_kmeans"))
-main_model = load_model(os.path.abspath(os.curdir + '/!!model/!!model/main class model/main_class_model.json'),
-                     os.path.abspath(os.curdir + '/!!model/!!model/main class model/main_class_model.h5'))
-main_scaler = load_pickle(os.path.abspath(os.curdir + '/!!model/!!model/main class model/main_class_scale'))
-
-breakhist_kmeans = load_pickle(os.path.abspath(os.curdir + '/!!model/!!model/breakhist_binary_model/breakhist_binary_kmeans'))
-breakhist_model = load_model(os.path.abspath(os.curdir + '/!!model/!!model/breakhist_binary_model/breakhist_binary.json'),
-                     os.path.abspath(os.curdir + '/!!model/!!model/breakhist_binary_model/breakhist_binary.h5'))
-breakhist_scaler = load_pickle(os.path.abspath(os.curdir + '/!!model/!!model/breakhist_binary_model/breakhist_binary_scale'))
-
-breakhist_benign_kmeans = load_pickle(os.path.abspath(os.curdir + '/!!model/!!model/breakhist_benign_model/breakhist_benign_kmeans'))
-breakhist_benign_model = load_model(os.path.abspath(os.curdir + '/!!model/!!model/breakhist_benign_model/breakist_benign_model.json'),
-                     os.path.abspath(os.curdir + '/!!model/!!model/breakhist_benign_model/breakist_benign_model.h5'))
-breakhist_benign_scaler = load_pickle(os.path.abspath(os.curdir + '/!!model/!!model/breakhist_benign_model/breakhist_benign_scale'))
-
-breakhist_malignant_kmeans = load_pickle(os.path.abspath(os.curdir + '/!!model/!!model/breakhist_malignant/breakhist_malignant_kmeans'))
-breakhist_malignant_model = load_model(os.path.abspath(os.curdir + '/!!model/!!model/breakhist_malignant/breakist_malignant_model.json'),
-                     os.path.abspath(os.curdir + '/!!model/!!model/breakhist_malignant/breakist_malignant_model.h5'))
-breakhist_malignant_scaler = load_pickle(os.path.abspath(os.curdir + '/!!model/!!model/breakhist_malignant/breakhist_malignant_scale'))
-
-idrid_kmeans = load_pickle(os.path.abspath(os.curdir + '/!!model/!!model/idrid_model/kmeans_IDRID_2class'))
-idrid_model = load_model(os.path.abspath(os.curdir + '/!!model/!!model/idrid_model/model_IDRID_2class.json'),
-                     os.path.abspath(os.curdir + '/!!model/!!model/idrid_model/model_IDRID_2class.h5'))
-idrid_scaler = load_pickle(os.path.abspath(os.curdir + '/!!model/!!model/idrid_model/scale'))
-
-isic_kmeans = load_pickle(os.path.abspath(os.curdir + '/!!model/!!model/ISIC NW 10/kmeans_isic_binary_nw_10'))
-isic_model = load_model(os.path.abspath(os.curdir + '/!!model/!!model/ISIC NW 10/model_isic_binary_nw_10.json'),
-                     os.path.abspath(os.curdir + '/!!model/!!model/ISIC NW 10/model_isic_binary_nw_10.h5'))
-isic_scaler = load_pickle(os.path.abspath(os.curdir + '/!!model/!!model/ISIC NW 10/isic_scale'))
-
-mias_kmeans = load_pickle(os.path.abspath(os.curdir + '/!!model/!!model/mias_model/mias_kmeans'))
-mias_model = load_model(os.path.abspath(os.curdir + '/!!model/!!model/mias_model/mias_model.json'),
-                     os.path.abspath(os.curdir + '/!!model/!!model/mias_model/mias_model.h5'))
-mias_scaler = load_pickle(os.path.abspath(os.curdir + '/!!model/!!model/mias_model/mias_scale'))
 
 
-images_result = []
-showing_labels = []
-distance_result = []
-class_result = ""
-def mias_crop(input_data):
-  img = cv2.imread(input_data, 0)
-
-  methods = ['cv2.TM_CCOEFF', 'cv2.TM_CCOEFF_NORMED', 'cv2.TM_CCORR',
-                          'cv2.TM_CCORR_NORMED', 'cv2.TM_SQDIFF', 'cv2.TM_SQDIFF_NORMED']
-  try:
-      pathTemplate = (os.path.abspath(os.curdir + '/app/template.png'))
-      template = cv2.imread(pathTemplate,0)
-  except IOError as e:
-      print("({})".format(e))
-  else:
-      w, h = template.shape[::-1]
-
-  method = eval(methods[5])
-
-  try:
-    res = cv2.matchTemplate(img, template, method)
-  except:
-    return input_data
-
-  min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
-  if method in [cv2.TM_SQDIFF, cv2.TM_SQDIFF_NORMED]:
-      top_left = min_loc
-  else:
-      top_left = max_loc
-  bottom_right = (top_left[0] + w, top_left[1] + h)
-  
-  roi = img[top_left[1]:top_left[1]+h,0:bottom_right[1]+w]
-  clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
-  roi = clahe.apply(roi)
-  roi = cv2.cvtColor(roi,cv2.COLOR_GRAY2RGB)
-  roi = cv2.resize(roi, (300, 300))
-  cv2.imwrite('mias.png', roi)
-  if len(roi) == 0:
-    img = clahe.apply(img)
-    return img
-  return roi
-
-def predict(kmeans, model, input_data, num_words, scaler, mias=-1):
+def predict(kmeans, model, input_data, num_words, scaler):
+  #top class
   descriptor_list = []
-  if mias == -1:
-    img = readImage(input_data)
-  else:
-    img = input_data
+  img = readImage(input_data)
   des = getDescriptors(sift, img)
   descriptor_list.append(des)
   im_features = extractFeatures(kmeans, descriptor_list, 1, num_words)
   im_features = scaler.transform(im_features)
   res = np.argmax(model.predict(im_features))
-  return model.predict(im_features)
-
-def predict_mias(input_data, kmeans, model, scaler):
-  input_data = mias_crop(input_data)
-  res = predict(kmeans, model, input_data, 300, scaler, 1)
-  return res
   if res == 0:
-    return "mias_benign"
-  elif res == 1:
-    return "mias_malignant"
-
-def predict_main_class(input_data, kmeans, model, scaler):
-  res = predict(kmeans, model, input_data, 100, scaler)
-  return res
-  
-def predict_breakhist(input_data, kmeans, model, scaler):
-  res = predict(kmeans, model, input_data, 320, scaler)
-  return res
-
-def predict_breakhist_benign(input_data, kmeans, model, scaler):
-  res = predict(kmeans, model, input_data, 300, scaler)
-  return res
-
-def predict_breakhist_malignant(input_data, kmeans, model, scaler):
-  res = predict(kmeans, model, input_data, 1024, scaler)
-  return res
-
-def predict_isic(input_data, kmeans, model, scaler):
-  res = predict(kmeans, model, input_data, 10, scaler)
-  return res
+    #benign
+    image = cv2.imread(input_data,1)
+    descriptor_list = []
+    des = getDescriptors(sift, image)
+    descriptor_list.append(des)
+    im_features = extractFeatures(benign_kmeans, descriptor_list, 1, 300)
+    im_features = benign_scale.transform(im_features)
+    res = np.argmax(benign_model.predict(im_features))
+    new_input = benign_model.input
+    new_output = benign_model.layers[-3].output
+    nmodel = tf.keras.Model(new_input, new_output)
+    res = nmodel.predict(im_features)
+    return 'benign', np.argmax(res)
+  else :
+    #mal
+    image = cv2.imread(input_data, 1)
+    descriptor_list = []
+    des = getDescriptors(sift, image)
+    descriptor_list.append(des)
+    im_features = extractFeatures(malignant_kmeans, descriptor_list, 1, 300)
+    im_features = malignant_scale.transform(im_features)
+    res = np.argmax(malignant_model.predict(im_features))
+    new_input = malignant_model.input
+    new_output = malignant_model.layers[-3].output
+    nmodel = tf.keras.Model(new_input, new_output)
+    res = malignant_model.predict(im_features)
+    return 'malignant', np.argmax(res)
     
+adenosis = 0
+fibroadenoma = 0
+phyllodes_tumor = 0
+tubular_adenoma = 0
 
-def predict_idrid(input_data, kmeans, model, scaler):
-  res = predict(kmeans, model, input_data, 100, scaler)
-  return res
-    
-def get_class(path):
-  output = []
-  main_class = predict_main_class(path,
-                        main_kmeans, main_model, main_scaler
-            )
-  output.append(main_class)
-  if np.argmax(main_class) == 3: #mias
-    child_class = predict_mias(path,
-                        mias_kmeans, mias_model, mias_scaler
-            )
-    output.append(child_class)
+ductal_carcinoma = 0
+lobular_carcinoma = 0
+mucinous_carcinoma = 0
+papillary_carcinoma = 0
+b_features_repository = []
+m_features_repository = []
+b_repository = []
+m_repository = []
+b_descriptor_list, m_descriptor_list = [], []
+b_labels, m_labels = [], []
+m_count, b_count = 0, 0
 
-  elif np.argmax(main_class) == 1: #idrid
-    child_class = predict_idrid(path,
-                        idrid_kmeans, idrid_model, idrid_scaler
-            )
-    output.append(child_class)
 
-  elif np.argmax(main_class) == 2: #isic
-    child_class = predict_isic(path,
-                            isic_kmeans, isic_model, isic_scaler
-                )
-    output.append(child_class)
-  elif np.argmax(main_class) == 0: #breakhist
-    breakhist_class = predict_breakhist(path,
-                            breakhist_kmeans, breakhist_model, breakhist_scaler
-                )
-    output.append(breakhist_class)
+b_features_repository = load_pickle(os.path.abspath(os.curdir + "/pickle/b_features_repository.pickle"))
+b_repository = load_pickle(os.path.abspath(os.curdir + "/pickle/b_repository.pickle"))
+b_descriptor_list = load_pickle(os.path.abspath(os.curdir + "/pickle/b_descriptor_list.pickle"))
+b_labels = load_pickle(os.path.abspath(os.curdir + "/pickle/b_labels.pickle"))
 
-    if np.argmax(breakhist_class) == 0:
-      child_class = predict_breakhist_benign(path,
-                              breakhist_benign_kmeans, breakhist_benign_model, breakhist_benign_scaler
-                  )
-      
-      output.append(child_class)
-    elif np.argmax(breakhist_class) == 1:
-      child_class = predict_breakhist_malignant(path,
-                              breakhist_malignant_kmeans, breakhist_malignant_model, breakhist_malignant_scaler
-                  )
-      output.append(child_class)
-      
-  return output
-# from google.colab import files
-# uploaded = files.upload()
-# for fn in uploaded.keys():
-#   print(predict_main_class(fn))
+m_features_repository = load_pickle(os.path.abspath(os.curdir + "/pickle/m_features_repository.pickle"))
+m_repository = load_pickle(os.path.abspath(os.curdir + "/pickle/m_repository.pickle"))
+m_descriptor_list = load_pickle(os.path.abspath(os.curdir + "/pickle/m_descriptor_list.pickle"))
+m_labels = load_pickle(os.path.abspath(os.curdir + "/pickle/m_labels.pickle"))
 
-import random, datetime
-def get_image_paths(path, count=10):
-  random.seed(datetime.datetime.now())
-  training_names = os.listdir(path)
-  image_paths = []
-  for training_name in training_names:
-      image_path = os.path.join(path, training_name)
-      image_paths += [image_path]
-  if count == -1:
-    return image_paths
-  # return image_paths[:10]
-  return random.sample(image_paths, count)
+print("sudah 10 semuanya")
+b_im_features = load_pickle(os.path.abspath(os.curdir + "/pickle/b_im_features.pickle"))
+m_im_features = load_pickle(os.path.abspath(os.curdir + "/pickle/m_im_features.pickle"))
 
-def train_bovw(path, classname, no_clusters=50):
-  feature = []
-  count=0
-  image_paths = []
-  sift = cv2.xfeatures2d.SIFT_create()
-  descriptor_list = []
-  label = []
-  
-  for img_path in path:
-    print(img_path)
-    img = readImage(img_path)
-    des = getDescriptors(sift, img)
-    if des is None:
-      continue
-    else:
-      count = count + 1
-      print(count)
-      descriptor_list.append(des)
-      label.append(classname)
-      print(classname)
 
-  descriptors = vstackDescriptors(descriptor_list)
-  print("Descriptors vstacked.")
-  kmeans = clusterDescriptors(descriptors, no_clusters)
-  print("Descriptors clustered.")
-  im_features = extractFeatures(kmeans, descriptor_list, count, no_clusters)
-  print("Images features extracted.")
-  scaler = StandardScaler().fit(im_features)        
-  im_features = scaler.transform(im_features)
-  print("Train images normalized.")
-  return im_features, kmeans, scaler
+from sklearn.neighbors import KNeighborsClassifier
 
-def euclidean(a, b):
-	return np.linalg.norm(a - b)
- 
-from numpy import dot
-from numpy.linalg import norm
+from keras.utils import to_categorical
+from sklearn.preprocessing import LabelEncoder, StandardScaler
+
+labelencoder = LabelEncoder()
+y_benign = labelencoder.fit_transform(b_labels)
+y_benign = np.asarray(y_benign)
+y_benign = to_categorical(y_benign)
+y_malignant = labelencoder.fit_transform(m_labels)
+y_malignant = np.asarray(y_malignant)
+y_malignant = to_categorical(y_malignant)
+b_knn = KNeighborsClassifier(n_neighbors = 4) #define K=1
+print(np.array(b_im_features).shape)
+b_knn.fit(b_im_features, y_benign)
+
+m_knn = KNeighborsClassifier(n_neighbors = 4) #define K=1
+m_knn.fit(m_im_features, y_malignant)
+
+
 
 def cosine_similarity(a, b):
   return dot(a, b)/(norm(a)*norm(b))
 
-def perform_search(queryFeatures, feats, maxResults=10):
-	results = []
-	for i in range(0, len(feats)):
-		d = cosine_similarity(queryFeatures, feats[i])
-		results.append((d, i))
-	results = sorted(results, reverse=True)[:maxResults] # dari besar ke kecil (descending)
-	count = 0
-	return results
-
+def euclidean(a, b):
+	return np.linalg.norm(np.array(a) - np.array(b))
+ 
 def get_query_features(kmeans, input_data, num_words, scaler):
   descriptor_list = []
   
@@ -346,297 +306,150 @@ def get_query_features(kmeans, input_data, num_words, scaler):
   im_features = scaler.transform(im_features)
   return im_features
 
-  
-def show_retrieved_images(query_path, image_paths, features, scaler, kmeans, numWords= 50):
-  query_features = get_query_features(kmeans, query_path, numWords, scaler)
-  results = perform_search(query_features, features)
+def perform_search(query_features, query_voc_features, feats, repo_voc_features, knn, max_results=10):
+  temps = []
+
+  for i in range(0, len(feats)):
+    d = euclidean(query_features, feats[i])
+    # d = (d + euclidean(query_color_features, c
+    voc_d = euclidean(query_voc_features, repo_voc_features[i])/100
+    knn_d = euclidean(knn.predict(query_voc_features), knn.predict(repo_voc_features[i].reshape(1,-1)))
+    temps.append((d, i, voc_d, knn_d))
+    temps = sorted(temps)
+
+  results = []
+  for temp in temps:
+    d, i, voc_d, knn_d = temp
+    results.append((d,i, voc_d, knn_d))
+  # return results[:10], count
+  return results
+
+
+def load_model(json_path, weight_path):
+  json_file = open(json_path, 'r') #.json
+  loaded_model_json = json_file.read()
+  json_file.close()
+  loaded_model = model_from_json(loaded_model_json)
+  loaded_model.load_weights(weight_path)
+  print("Loaded model from disk")
+  return loaded_model
+
+def load_pickle(path):
+  infile = open(path,'rb')
+  loaded_pickle = pickle.load(infile)
+  infile.close()
+  return loaded_pickle
+
+def show_retrieved_images(query_path, repositories, labels, scaler, kmeans, query_label, model,num_words= 50):
+  global result_image
+  global result_relevant
+  global result_distances
+  result_image = []
+  result_relevant = []
+  result_distances = []
+
+  predicted_label, predicted_features = predict(kmeans, model, query_path, num_words, scaler)
+  query_features = get_query_features(kmeans, query_path, num_words, scaler)
+  if predicted_label == 'benign':
+    query_features = get_query_features(benign_kmeans, query_path, 300, benign_scale)
+    results = perform_search(predicted_features,query_features, b_features_repository, b_im_features, b_knn)
+    repositories = repositories[0]
+    labels = labels[0]
+  else:    
+    query_features = get_query_features(malignant_kmeans, query_path, 300, malignant_scale)
+    results = perform_search(predicted_features,query_features, m_features_repository, m_im_features, m_knn)
+    repositories = repositories[1]
+    labels = labels[1]
+  precision, recall = [], []
+  correct, count = 0, 0
   images = []
-  path = []
+  label = []
   distances = []
-  for (d, j) in results:
-    image = cv2.imread(image_paths[j])
+  path_image = []
+  for (d, j, voc_d, knn_d) in results:
+    # print(repositories[j])
+    count = count + 1
+    print(count)
+    image = cv2.imread(repositories[j])
+    label.append(labels[j])
+    if query_label == labels[j]:
+      correct = correct + 1   
+
+    precision.append(correct/count)
+    curr_recall = correct/10
+    recall.append(curr_recall)
+    path_image.append(repositories[j])
     images.append(image)
-    distances.append(d)
-    path.append(image_paths[j])
+    distances.append((d, voc_d))
+    if curr_recall == 1:
+      break
   print(f"Query:")
-  print(f"Actual Class : {get_ground_truth(query_path)}")
-  print(j)
+  print(f"Actual Class : {query_label}")
+  plt.axis('off')
+  img = cv2.imread(query_path)#readImage(query_path)
+  img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-
-  fig=plt.figure(figsize=(20, 8))
+  # plt.imshow(img, cmap='gray')#cv2.cvtColor(cv2.imread(query_path), cv2.COLOR_BGR2RGB))
+  # plt.show()
+  # fig=plt.figure(figsize=(20, 8))
   columns = 5
   rows = 2
-  for i in range(1, columns*rows +1):
-    try:
-      img = images[i-1]
-      ax = fig.add_subplot(rows, columns, i)
-      showing_label = "R" if get_ground_truth(query_path) == get_ground_truth(image_paths[i-1]) else "NR"
-      # ax.set_title(f'{showing_label} - {distances[i-1][0]}')
-      # plt.imshow(img)
-      showing_labels.append(showing_label)
-      distance_result.append(distances[i-1][0])
-      images_result.append(image_paths[i-1])
-      # cv2.imwrite(f"image{i}.png",img)
-      print(image_paths[i-1])
-      printf("fff")
-      print(showing_labels[i])
-    except:
-      print("")
+  for i in range(1, columns*rows + 1):
+    # count = count + 1
+    # if query_label == label[i-1]:
+    #   correct = correct + 1        
+    img = images[i-1]
+    print(path_image[i-1])
+    with open(path_image[i-1], "rb") as img_file:
+          b64_string = base64.b64encode(img_file.read())
+          result_image.append(b64_string.decode('utf-8'))
+   
+  #   img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+  #   ax = fig.add_subplot(rows, columns, i)
+    showing_label = "Relevant" if query_label == label[i-1] else "Not Relevant"
+    result_relevant.append(showing_label)
+    result_distances.append(str(distances[i-1][0])+"-"+" "+str(distances[i-1][1]))
+  #   precision.append(correct/count)
+  #   recall.append(correct/10) # 10 itu relevant count
+  #   ax.set_title(f"{label[i-1]}\n {distances[i-1]}")
+  #   ax.set_title(f"{showing_label} \n {distances[i-1][0]} \n {distances[i-1][1]}")
+  #   plt.axis('off')
+  #   plt.imshow(img, cmap='gray')
+    
   # plt.show()
 
-  #Breakhist Benign
-breakhist_adenosis_path = os.path.abspath(os.curdir + '/dataset/BreakHist Split/Benign/train/adenosis')
-breakhist_fibroadenoma_path = os.path.abspath(os.curdir + '/dataset/BreakHist Split/Benign/train/fibroadenoma')
-breakhist_phyllodes_tumor_path = os.path.abspath(os.curdir + '/dataset/BreakHist Split/Benign/train/phyllodes_tumor')
-breakhist_tubular_adenoma_path = os.path.abspath(os.curdir + '/dataset/BreakHist Split/Benign/train/tubular_adenoma')
-
-breakhist_adenosis_path = get_image_paths(breakhist_adenosis_path)
-breakhist_fibroadenoma_path = get_image_paths(breakhist_fibroadenoma_path)
-breakhist_phyllodes_tumor_path = get_image_paths(breakhist_phyllodes_tumor_path)
-breakhist_tubular_adenoma_path = get_image_paths(breakhist_tubular_adenoma_path)
-
-adenosis_features, adenosis_kmeans, adenosis_scaler = train_bovw(breakhist_adenosis_path, 'adenosis', 300)
-fibroadenoma_features, fibroadenoma_kmeans, fibroadenoma_scaler = train_bovw(breakhist_adenosis_path, 'fibroadenoma', 300)
-phyllodes_tumor_features, phyllodes_tumor_kmeans, phyllodes_tumor_scaler = train_bovw(breakhist_adenosis_path, 'phyllodes_tumor', 300)
-tubular_adenoma_features, tubular_adenoma_kmeans, tubular_adenoma_scaler = train_bovw(breakhist_adenosis_path, 'tubular_adenoma', 300)
-
-#Breakhist Malignant
-breakhist_ductal_carcinoma_path = os.path.abspath(os.curdir + '/dataset/BreakHist Split/Malignant/train/ductal_carcinoma')
-breakhist_lobular_carcinoma_path = os.path.abspath(os.curdir + '/dataset/BreakHist Split/Malignant/train/lobular_carcinoma')
-breakhist_mucinous_carcinoma_path = os.path.abspath(os.curdir + '/dataset/BreakHist Split/Malignant/train/mucinous_carcinoma')
-breakhist_papillary_carcinoma_path = os.path.abspath(os.curdir + '/dataset/BreakHist Split/Malignant/train/papillary_carcinoma')
-
-breakhist_ductal_carcinoma_path = get_image_paths(breakhist_ductal_carcinoma_path)
-breakhist_lobular_carcinoma_path = get_image_paths(breakhist_lobular_carcinoma_path)
-breakhist_mucinous_carcinoma_path = get_image_paths(breakhist_mucinous_carcinoma_path)
-breakhist_papillary_carcinoma_path = get_image_paths(breakhist_papillary_carcinoma_path)
-
-
-ductal_carcinoma_features, ductal_carcinoma_kmeans, ductal_carcinoma_scaler = train_bovw(breakhist_adenosis_path, 'ductal_carcinoma', 1024)
-lobular_carcinoma_features, lobular_carcinoma_kmeans, lobular_carcinoma_scaler = train_bovw(breakhist_adenosis_path, 'lobular_carcinoma', 1024)
-mucinous_carcinoma_features, mucinous_carcinoma_kmeans, mucinous_carcinoma_scaler = train_bovw(breakhist_adenosis_path, 'mucinous_carcinoma', 1024)
-papillary_carcinoma_features, papillary_carcinoma_kmeans, papillary_carcinoma_scaler = train_bovw(breakhist_adenosis_path, 'papillary_carcinoma', 1024)
-
-#IDRID Positive
-idrid_positive_path = os.path.abspath(os.curdir + '/dataset/IDRiD Splitted/train/symptoms')
-
-idrid_positive_path = get_image_paths(idrid_positive_path)
-
-idrid_positive_features, idrid_positive_kmeans, idrid_positive_scaler = train_bovw(idrid_positive_path, 'symptoms', 100)
-
-#IDRID Negative
-idrid_negative_path = os.path.abspath(os.curdir + '/dataset/IDRiD Splitted/train/nosymptoms')
-
-idrid_negative_path = get_image_paths(idrid_negative_path)
-
-idrid_negative_features, idrid_negative_kmeans, idrid_negative_scaler = train_bovw(idrid_negative_path, 'nosymptoms', 100)
-
-#ISIC Benign
-isic_benign_path = os.path.abspath(os.curdir + '/dataset/ISIC-V2/train/benign')
-
-isic_benign_path = get_image_paths(isic_benign_path)
-
-isic_benign_features, isic_benign_kmeans, isic_benign_scaler = train_bovw(isic_benign_path, 'isic-benign', 10)
-#ISIC Malignant
-isic_malignant_path = os.path.abspath(os.curdir + '/dataset/ISIC-V2/train/malignant')
-
-isic_malignant_path = get_image_paths(isic_malignant_path)
-
-isic_malignant_features, isic_malignant_kmeans, isic_malignant_scaler = train_bovw(isic_malignant_path, 'isic-malignant', 10)
-
-#MIAS Benign
-mias_benign_path = os.path.abspath(os.curdir + '/dataset/Mias Split/train/mias-benign')
-
-mias_benign_path = get_image_paths(mias_benign_path)
-
-mias_benign_features, mias_benign_kmeans, mias_benign_scaler = train_bovw(mias_benign_path, 'mias-benign', 300)
-
-#MIAS malignant
-mias_malignant_path = os.path.abspath(os.curdir + '/dataset/Mias Split/train/mias-malignant')
-
-mias_malignant_path = get_image_paths(mias_malignant_path)
-
-mias_malignant_features, mias_malignant_kmeans, mias_malignant_scaler = train_bovw(mias_malignant_path, 'mias-malignant', 300)
-
-main_class_label =  ['breakhist', 'idrid', 'isic', 'mias']
-mias_label = ['mias_benign', 'mias_malignant']
-breakhist_label = ['benign', 'malignant']
-breakhist_benign_label = ['adenosis','fibroadenoma','phyllodes_tumor','tubular_adenoma']
-breakhist_malignant_label = ['ductal_carcinoma','lobular_carcinoma','mucinous_carcinoma','papillary_carcinoma']
-isic_label = ['isic_benign', 'isic_malignant']
-idrid_label = ['idrid_negative', 'idrid_positive']
-
-def decode_label(encoded):
-  main_class = encoded[0]
-  main_class = np.argmax(main_class) 
-  child_class = np.argmax(encoded[1])  
-  actual_label = 'unknown'
-  if main_class == 0:
-    if child_class == 0:
-      actual_label = breakhist_benign_label[np.argmax(encoded[2])]
-    elif child_class == 1:
-     actual_label = breakhist_malignant_label[np.argmax(encoded[2])]
-  elif main_class == 1:
-    actual_label = idrid_label[child_class]
-  elif main_class == 2:
-    actual_label = isic_label[child_class]
-  elif main_class == 3:
-    actual_label = mias_label[child_class]
-
-  return actual_label
-
-
-def show_data(query_path):
-  global class_result
-  actual_label = decode_label(get_class(query_path))
-  class_result = actual_label
-  if actual_label == 'adenosis':
-    return show_retrieved_images(query_path, breakhist_adenosis_path, adenosis_features, adenosis_scaler, adenosis_kmeans, 300)
-
-  elif actual_label == 'fibroadenoma':
-    return show_retrieved_images(query_path, breakhist_fibroadenoma_path, fibroadenoma_features, fibroadenoma_scaler, fibroadenoma_kmeans, 300)
-
-  elif actual_label == 'phyllodes_tumor':
-    return show_retrieved_images(query_path, breakhist_phyllodes_tumor_path, phyllodes_tumor_features, 
-                          phyllodes_tumor_scaler, phyllodes_tumor_kmeans, 300)
-
-  elif actual_label == 'tubular_adenoma':
-    return show_retrieved_images(query_path, breakhist_tubular_adenoma_path, tubular_adenoma_features, 
-                          tubular_adenoma_scaler, tubular_adenoma_kmeans, 300)
-
-  elif actual_label =='ductal_carcinoma':
-    return show_retrieved_images(query_path, breakhist_ductal_carcinoma_path, ductal_carcinoma_features, 
-                          ductal_carcinoma_scaler, ductal_carcinoma_kmeans, 1024)
-    
-  elif actual_label =='lobular_carcinoma':
-    return show_retrieved_images(query_path, breakhist_lobular_carcinoma_path, lobular_carcinoma_features,
-                          lobular_carcinoma_scaler,lobular_carcinoma_kmeans, 1024)
-    
-  elif actual_label =='mucinous_carcinoma':
-    return show_retrieved_images(query_path, breakhist_mucinous_carcinoma_path, mucinous_carcinoma_features, 
-                          mucinous_carcinoma_scaler, mucinous_carcinoma_kmeans, 1024)
-    
-  elif actual_label =='papillary_carcinoma':
-    return show_retrieved_images(query_path, breakhist_papillary_carcinoma_path, papillary_carcinoma_features, 
-                          papillary_carcinoma_scaler, papillary_carcinoma_kmeans, 1024)
-
-  elif actual_label == 'idrid_positive':
-    return show_retrieved_images(query_path, idrid_positive_path, idrid_positive_features, 
-                          idrid_positive_scaler, idrid_positive_kmeans, 100)
-
-  elif actual_label == 'idrid_negative':
-    return show_retrieved_images(query_path, idrid_negative_path, idrid_negative_features, 
-                          idrid_negative_scaler, idrid_negative_kmeans, 100)
-
-  elif actual_label == 'mias_benign':
-    return show_retrieved_images(query_path, mias_benign_path, mias_benign_features, 
-                          mias_benign_scaler, mias_benign_kmeans, 300)
-
-  elif actual_label == 'mias_malignant':
-    return show_retrieved_images(query_path, mias_malignant_path, mias_malignant_features, mias_malignant_scaler,
-                          mias_malignant_kmeans, 300)
-
-  elif actual_label == 'isic_benign':
-    return show_retrieved_images(query_path, isic_benign_path, isic_benign_features, isic_benign_scaler, isic_benign_kmeans, 10)
-
-  elif actual_label == 'isic_malignant':
-    return show_retrieved_images(query_path, isic_malignant_path, isic_malignant_features, isic_malignant_scaler, isic_malignant_kmeans, 10)
-
-def get_ground_truth(query_path):
-  # for query_path in path:
-  ground_truth = query_path.split('\\')[-2].replace('-','_')
-  ground_truth = 'idrid_negative' if ground_truth=='nosymptoms' else 'idrid_positive' if ground_truth=='symptoms' else ground_truth
-
-  return ground_truth
-    
-def exec_eval(query_path, image_paths, features, scaler, kmeans, numWords, relevant_count=10):
-  query_features = get_query_features(kmeans, query_path, numWords, scaler)
-  results = perform_search(query_features, features)
-  images, path, distances, correct_id, precision, recall = [], [], [], [], [], []
-  count, correct = 0, 0
-  
-  ground_truth = get_ground_truth(query_path)
-  for (d, j) in results:   
-    if (get_ground_truth(image_paths[j])) == ground_truth:
-      correct = correct + 1      
-      correct_id.append(1)
-    else:
-      correct_id.append(0)
-    count = count + 1
-    # print(count)
-    precision.append(correct/count)
-    recall.append(correct/relevant_count)
-  return precision, correct_id, recall
-
-def eval_query(query_path, relevant_count=10):
-  query = decode_label(get_class(query_path))
-  if query == 'adenosis':
-    return exec_eval(query_path, breakhist_adenosis_path, adenosis_features, adenosis_scaler, adenosis_kmeans, 300)
-
-  elif query == 'fibroadenoma':
-    return exec_eval(query_path, breakhist_fibroadenoma_path, fibroadenoma_features, fibroadenoma_scaler, fibroadenoma_kmeans, 300)
-
-  elif query == 'phyllodes_tumor':
-    return exec_eval(query_path, breakhist_phyllodes_tumor_path, phyllodes_tumor_features, 
-                          phyllodes_tumor_scaler, phyllodes_tumor_kmeans, 300)
-
-  elif query == 'tubular_adenoma':
-    return exec_eval(query_path, breakhist_tubular_adenoma_path, tubular_adenoma_features, 
-                          tubular_adenoma_scaler, tubular_adenoma_kmeans, 300)
-
-  elif query =='ductal_carcinoma':
-    return exec_eval(query_path, breakhist_ductal_carcinoma_path, ductal_carcinoma_features, 
-                          ductal_carcinoma_scaler, ductal_carcinoma_kmeans, 1024)
-    
-  elif query =='lobular_carcinoma':
-    return exec_eval(query_path, breakhist_lobular_carcinoma_path, lobular_carcinoma_features,
-                          lobular_carcinoma_scaler,lobular_carcinoma_kmeans, 1024)
-    
-  elif query =='mucinous_carcinoma':
-    return exec_eval(query_path, breakhist_mucinous_carcinoma_path, mucinous_carcinoma_features, 
-                          mucinous_carcinoma_scaler, mucinous_carcinoma_kmeans, 1024)
-    
-  elif query =='papillary_carcinoma':
-    return exec_eval(query_path, breakhist_papillary_carcinoma_path, papillary_carcinoma_features, 
-                          papillary_carcinoma_scaler, papillary_carcinoma_kmeans, 1024)
-
-  elif query == 'idrid_positive':
-    return exec_eval(query_path, idrid_positive_path, idrid_positive_features, 
-                          idrid_positive_scaler, idrid_positive_kmeans, 100)
-
-  elif query == 'idrid_negative':
-    return exec_eval(query_path, idrid_negative_path, idrid_negative_features, 
-                          idrid_negative_scaler, idrid_negative_kmeans, 100)
-
-  elif query == 'mias_benign':
-    return exec_eval(query_path, mias_benign_path, mias_benign_features, 
-                          mias_benign_scaler, mias_benign_kmeans, 300)
-
-  elif query == 'mias_malignant':
-    return exec_eval(query_path, mias_malignant_path, mias_malignant_features, mias_malignant_scaler,
-                          mias_malignant_kmeans, 300)
-
-  elif query == 'isic_benign':
-    return exec_eval(query_path, isic_benign_path, isic_benign_features, isic_benign_scaler, isic_benign_kmeans, 10)
-
-  elif query == 'isic_malignant':
-    return exec_eval(query_path, isic_malignant_path, isic_malignant_features, isic_malignant_scaler, isic_malignant_kmeans, 10)
-
-
+  avg_prec = sum(precision)/count
+  recall_11, precision_11 = [], []
+  score = 1
+  for i, r in enumerate(recall):
+    if r*10 == score:
+      recall_11.append(r)
+      precision_11.append(precision[i])
+      score = score + 1
+    if score == 11:
+      break
+  return recall_11, precision_11, avg_prec, correct, result_image,result_relevant,result_distances
 
 @app.route('/image-retrieval')
 def index():
-  result_after = []
-  query_path = os.path.abspath(os.curdir + "/dataset/Mias Split/train/mias-benign/0.pgm")
-  show_data(query_path)
-  query_image = cv2.imread(query_path)
-  cv2.imwrite(os.curdir + "/app/static/query_image.png",query_image)
+    test_recall, test_precision, test_avg_precision = [], [], []
 
-  for i in range(len(images_result)):
-    images_temporary = cv2.imread(images_result[i])
-    cv2.imwrite(os.curdir + f"/app/static/result_image{i}.png",images_temporary)
-    result_after.append(f"/static/result_image{i}.png")
+    recall, precision, avg_precision, correct, result_image, result_relevant, result_distances = show_retrieved_images(os.path.abspath(os.curdir + "/dataset/benign/validation/phyllodes_tumor/phyllodes_tumor110.jpg"), 
+                                                                      [b_repository, m_repository], 
+                                                                      [b_labels, m_labels], scale, kmeans, 'phyllodes_tumor', model,800)
+    print(recall)
+    print(precision)
+    print(recall)
+    test_recall.append(recall)
+    test_precision.append(precision)
+    test_avg_precision.append(avg_precision)
+    # classes_avg_precision[label].append(avg_precision)
+    # classes_precision[label].append(precision)
+    # classes_recall[label].append(recall)
+    # print(correct)
+    # print("test pathnya : "+test_path)
+    # print(f"avg_precision: {avg_precision}")
 
 
-  return render_template("result.html",result_class = class_result, query = "/static/query_image.png", image = result_after, showing_labels=showing_labels,distance_result=distance_result,complete_all=zip(result_after,showing_labels,distance_result))
+    return jsonify({"image" :result_image, 'relevant_result': result_relevant, 'distances_result': result_distances, 'average_precision': avg_precision})
 
