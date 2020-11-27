@@ -38,6 +38,9 @@ from numpy.linalg import norm
 import base64
 from app import app
 from flask import jsonify
+from flask import request
+import shutil
+from flask_cors import CORS,cross_origin
 
 train_datas, test_datas = [], []
 
@@ -198,6 +201,11 @@ sift = cv2.xfeatures2d.SIFT_create()
 
 
 
+num_words = 800
+sift = cv2.xfeatures2d.SIFT_create()
+
+
+
 def predict(kmeans, model, input_data, num_words, scaler):
   #top class
   descriptor_list = []
@@ -220,7 +228,7 @@ def predict(kmeans, model, input_data, num_words, scaler):
     new_output = benign_model.layers[-3].output
     nmodel = tf.keras.Model(new_input, new_output)
     res = nmodel.predict(im_features)
-    return 'benign', np.argmax(res)
+    return 'benign', res
   else :
     #mal
     image = cv2.imread(input_data, 1)
@@ -233,8 +241,8 @@ def predict(kmeans, model, input_data, num_words, scaler):
     new_input = malignant_model.input
     new_output = malignant_model.layers[-3].output
     nmodel = tf.keras.Model(new_input, new_output)
-    res = malignant_model.predict(im_features)
-    return 'malignant', np.argmax(res)
+    res = nmodel.predict(im_features)
+    return 'malignant', res
     
 adenosis = 0
 fibroadenoma = 0
@@ -252,6 +260,86 @@ m_repository = []
 b_descriptor_list, m_descriptor_list = [], []
 b_labels, m_labels = [], []
 m_count, b_count = 0, 0
+
+# for i, image_path in enumerate(x_train):
+#   if adenosis == 10 and fibroadenoma == 10 and phyllodes_tumor == 10 and tubular_adenoma == 10 and ductal_carcinoma == 10 and lobular_carcinoma == 10 and mucinous_carcinoma == 10 and papillary_carcinoma == 10:
+#     break
+#   image = readImage(image_path)
+#   print ("Extract SIFT of %s image, %d of %d images" %(y_train[i], i, len(x_train)))
+#   des = getDescriptors(sift, image)
+#   if des is None:
+#     des = np.zeros([1, 128])
+#   repo_class, repo_features = predict(kmeans,model,image_path,num_words,scale)
+#   print("kelasnya adalah "+repo_class)
+#   if repo_class == 'benign':
+#       if adenosis != 10 and y_train[i] == 'adenosis':
+#           print("masuk ade")
+#           b_features_repository.append(repo_features)
+#           b_repository.append(image_path)
+#           b_descriptor_list.append(des)
+#           b_labels.append(y_train[i])
+#           adenosis+=1
+#           b_count+=1
+#       elif fibroadenoma != 10 and y_train[i] == 'fibroadenoma':
+#           b_features_repository.append(repo_features)
+#           b_repository.append(image_path)
+#           b_descriptor_list.append(des)
+#           b_labels.append(y_train[i])
+#           fibroadenoma+=1
+#           b_count+=1
+#       elif phyllodes_tumor != 10 and y_train[i] == 'phyllodes_tumor':
+#           b_features_repository.append(repo_features)
+#           b_repository.append(image_path)
+#           b_descriptor_list.append(des)
+#           b_labels.append(y_train[i])
+#           phyllodes_tumor+=1
+#           b_count+=1
+#       elif tubular_adenoma !=10 and y_train[i] == 'tubular_adenoma':
+#           b_features_repository.append(repo_features)
+#           b_repository.append(image_path)
+#           b_descriptor_list.append(des)
+#           b_labels.append(y_train[i])
+#           tubular_adenoma+=1
+#           b_count+=1
+#   else:
+#       if ductal_carcinoma != 10 and y_train[i] == 'ductal_carcinoma':
+#         m_features_repository.append(repo_features)
+#         m_repository.append(image_path)
+#         m_descriptor_list.append(des)
+#         m_labels.append(y_train[i])
+#         ductal_carcinoma+=1
+#         m_count+=1
+#       elif lobular_carcinoma !=10 and y_train[i] == 'lobular_carcinoma':
+#         m_features_repository.append(repo_features)
+#         m_repository.append(image_path)
+#         m_descriptor_list.append(des)
+#         m_labels.append(y_train[i])
+#         lobular_carcinoma+=1
+#         m_count+=1
+#       elif mucinous_carcinoma !=10 and y_train[i] == 'mucinous_carcinoma':
+#         m_features_repository.append(repo_features)
+#         m_repository.append(image_path)
+#         m_descriptor_list.append(des)
+#         m_labels.append(y_train[i])
+#         mucinous_carcinoma+=1
+#         m_count+=1
+#       elif papillary_carcinoma !=10 and y_train[i] == 'papillary_carcinoma':
+#         m_features_repository.append(repo_features)
+#         m_repository.append(image_path)
+#         m_descriptor_list.append(des)
+#         m_labels.append(y_train[i])
+#         papillary_carcinoma+=1
+#         m_count+=1
+
+      
+
+# print("sudah 10 semuanya")
+# b_im_features = extractFeatures(benign_kmeans, b_descriptor_list, b_count, 300)
+# m_im_features = extractFeatures(malignant_kmeans, m_descriptor_list, m_count, 300)
+# b_im_features = benign_scale.transform(b_im_features)
+# m_im_features = malignant_scale.transform(m_im_features)
+
+
 
 
 b_features_repository = load_pickle(os.path.abspath(os.curdir + "/pickle/b_features_repository.pickle"))
@@ -287,6 +375,43 @@ b_knn.fit(b_im_features, y_benign)
 
 m_knn = KNeighborsClassifier(n_neighbors = 4) #define K=1
 m_knn.fit(m_im_features, y_malignant)
+
+import pickle
+# with open('b_descriptor_list.pickle', 'wb') as f:
+#   pickle.dump(b_descriptor_list, f)
+
+# with open('b_features_repository.pickle', 'wb') as f:
+#   pickle.dump(b_features_repository,f)
+
+# with open('b_im_features.pickle','wb') as f:
+#   pickle.dump(b_im_features,f)
+
+# with open('b_knn.pickle','wb') as f:
+#   pickle.dump(b_knn,f) 
+
+# with open('b_labels.pickle','wb') as f:
+#   pickle.dump(b_labels,f)
+
+# with open('b_repository.pickle','wb') as f:
+#   pickle.dump(b_repository,f)
+
+# with open('m_descriptor_list.pickle','wb') as f:
+#   pickle.dump(m_descriptor_list,f)
+
+# with open('m_features_repository.pickle','wb') as f:
+#   pickle.dump(m_features_repository,f)
+
+# with open('m_im_features.pickle','wb') as f:
+#   pickle.dump(m_im_features,f)
+
+# with open('m_knn.pickle','wb') as f:
+#   pickle.dump(m_knn,f)
+
+# with open('m_labels.pickle','wb') as f:
+#   pickle.dump(m_labels,f)
+
+# with open('m_repository.pickle','wb') as f:
+#   pickle.dump(m_repository,f)
 
 
 
@@ -430,13 +555,15 @@ def show_retrieved_images(query_path, repositories, labels, scaler, kmeans, quer
       break
   return recall_11, precision_11, avg_prec, correct, result_image,result_relevant,result_distances
 
-@app.route('/image-retrieval')
+@app.route('/image-retrieval',methods=['POST'])
+@cross_origin()
 def index():
     test_recall, test_precision, test_avg_precision = [], [], []
 
-    recall, precision, avg_precision, correct, result_image, result_relevant, result_distances = show_retrieved_images(os.path.abspath(os.curdir + "/dataset/benign/validation/phyllodes_tumor/phyllodes_tumor110.jpg"), 
-                                                                      [b_repository, m_repository], 
-                                                                      [b_labels, m_labels], scale, kmeans, 'phyllodes_tumor', model,800)
+    request.files['image'].save(os.path.abspath(os.curdir + "/uploads/"+str(request.files['image'].filename)))
+
+    recall, precision, avg_precision, correct, result_image, result_relevant, result_distances = show_retrieved_images(os.path.abspath(os.curdir + "/uploads/"+request.files['image'].filename),[b_repository, m_repository], 
+                                                                      [b_labels, m_labels], scale, kmeans, 'adenosis', model,800)
     print(recall)
     print(precision)
     print(recall)
@@ -452,4 +579,3 @@ def index():
 
 
     return jsonify({"image" :result_image, 'relevant_result': result_relevant, 'distances_result': result_distances, 'average_precision': avg_precision})
-
