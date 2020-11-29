@@ -41,6 +41,11 @@ from flask import jsonify
 from flask import request
 import shutil
 from flask_cors import CORS,cross_origin
+from PIL import Image # No need for ImageChops
+import math
+from skimage import img_as_float
+from skimage.metrics import mean_squared_error as mse
+# import skimage.metrics.mean_squared_error as mse
 
 train_datas, test_datas = [], []
 
@@ -198,12 +203,6 @@ malignant_kmeans = load_pickle(os.path.abspath(os.curdir + "/breakhist_4_kelas_a
 
 num_words = 800
 sift = cv2.xfeatures2d.SIFT_create()
-
-
-
-num_words = 800
-sift = cv2.xfeatures2d.SIFT_create()
-
 
 
 def predict(kmeans, model, input_data, num_words, scaler):
@@ -555,12 +554,162 @@ def show_retrieved_images(query_path, repositories, labels, scaler, kmeans, quer
       break
   return recall_11, precision_11, avg_prec, correct, result_image,result_relevant,result_distances
 
+
+  ##################################### IMAGE REGISTRATION #############################################
+image_regist_result = ""
+def get_random_crop(image, crop_height, crop_width):
+
+    max_x1 = image.shape[1] - crop_width
+    max_y1 = image.shape[0] - crop_height
+
+    x1 = 0#np.random.randint(0, max_x1)
+    y1 = 0#np.random.randint(0, max_y1)
+
+    img1 = image[y1: y1 + crop_height, x1: x1 + crop_width]
+    max_x2 = image.shape[1] - crop_width
+    max_y2 = image.shape[0] - crop_height
+
+    x2 = 40 #np.random.randint(0, max_x2)
+    y2 = 30 #np.random.randint(0, max_y2)
+
+    img2 = image[y2: y2 + crop_height, x2: x2 + crop_width]
+    return img1, img2, x1, x2, y1, y2
+
+
+def rmsdiff(im1, im2):
+    """Calculates the root mean square error (RSME) between two images"""
+    return math.sqrt(mse(img_as_float(im1), img_as_float(im2)))
+
+def get_stitched_image(img1, img2, M):
+  # Get width and height of input images	
+  w1,h1 = img1.shape[:2]
+  w2,h2 = img2.shape[:2]
+
+  # Get the canvas dimesions
+  img1_dims = np.float32([ [0,0], [0,w1], [h1, w1], [h1,0] ]).reshape(-1,1,2)
+  img2_dims_temp = np.float32([ [0,0], [0,w2], [h2, w2], [h2,0] ]).reshape(-1,1,2)
+
+
+  # Get relative perspective of second image
+  img2_dims = cv2.perspectiveTransform(img2_dims_temp, M)
+
+  # Resulting dimensions
+  result_dims = np.concatenate( (img1_dims, img2_dims), axis = 0)
+
+  # Getting images together
+  # Calculate dimensions of match points
+  [x_min, y_min] = np.int32(result_dims.min(axis=0).ravel() - 0.5)
+  [x_max, y_max] = np.int32(result_dims.max(axis=0).ravel() + 0.5)
+
+  # Create output array after affine transformation 
+  transform_dist = [-x_min,-y_min]
+  transform_array = np.array([[1, 0, transform_dist[0]], 
+                [0, 1, transform_dist[1]], 
+                [0,0,1]]) 
+
+  # Warp images to get the resulting image
+  result_img = cv2.warpPerspective(img2, transform_array.dot(M), 
+                  (x_max-x_min, y_max-y_min))
+  result_img[transform_dist[1]:w1+transform_dist[1], 
+        transform_dist[0]:h1+transform_dist[0]] = img1
+  theta = - math.atan2(M[0,1], M[0,0]) * 180 / math.pi
+  '''
+    0,0 0,1 0,2(tX)
+    1,0 1,1 1,2(tY)
+    2,0 2,1 2,2
+  '''
+  scale_x = M[0,0]
+  scale_y = M[1,1]
+  # Return the result
+  return result_img, theta ,M[0,2], M[1,2], scale_x, scale_y
+
+# Find SIFT or SURF and return Homography Matrix
+def get_homography(img1, img2, algo, is_clahe):
+  clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+
+	# Initialize SIFT 
+  sift = cv2.xfeatures2d.SURF_create()
+  if algo == 'sift':
+    sift = cv2.xfeatures2d.SIFT_create()
+  img1 = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY)
+  img2 = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)
+  if is_clahe == 1:
+    img1 = clahe.apply(img1)
+    img2 = clahe.apply(img2)
+
+  # Extract keypoints and descriptors
+  k1, d1 = sift.detectAndCompute(img1, None)
+  k2, d2 = sift.detectAndCompute(img2, None)
+
+  # Bruteforce matcher on the descriptors
+  bf = cv2.BFMatcher()
+  matches = bf.knnMatch(d1,d2, k=2)
+
+  # Make sure that the matches are good
+  verify_ratio = 0.8 # Source: stackoverflow
+  verified_matches = []
+  for m1,m2 in matches:
+    # Add to array only if it's a good match
+    if m1.distance < 0.8 * m2.distance:
+      verified_matches.append(m1)
+
+  # Mimnum number of matches
+  min_matches = 8
+  if len(verified_matches) > min_matches:
+    
+    # Array to store matching points
+    img1_pts = []
+    img2_pts = []
+
+    # Add matching points to array
+    for match in verified_matches:
+      img1_pts.append(k1[match.queryIdx].pt)
+      img2_pts.append(k2[match.trainIdx].pt)
+    img1_pts = np.float32(img1_pts).reshape(-1,1,2)
+    img2_pts = np.float32(img2_pts).reshape(-1,1,2)
+    
+    # Compute homography matrix
+    M, mask = cv2.findHomography(img1_pts, img2_pts, cv2.RANSAC, 5.0)
+    return M
+  else:
+    exit()
+
+
+def registration(reference_path, target_path, algo='sift', is_clahe=0):
+	# Get input set of images
+  global image_regist_result
+  img1 = cv2.imread(reference_path)
+  img2 = cv2.imread(target_path)
+  # img2 = cv2.rotate(img2, cv2.ROTATE_90_CLOCKWISE)
+
+  # Use SIFT to find keypoints and return homography matrix
+  M =  get_homography(img1, img2, algo, is_clahe)
+
+  # Stitch the images together using homography matrix
+  result_image, theta, tx, ty, scale_x, scale_y = get_stitched_image(img2, img1, M)
+  rmse = rmsdiff(img1, cv2.resize(result_image, (img1.shape[1], img1.shape[0])))
+  cv2.imwrite(os.path.abspath(os.curdir +"/uploads/result.png"),result_image)
+
+  with open(os.path.abspath(os.curdir +"/uploads/result.png"), "rb") as img_file:
+      b64_string = base64.b64encode(img_file.read())
+      image_regist_result = b64_string.decode('utf-8')
+  
+  print(f"RMSE: {rmse}")
+  print(f"tx: {tx}, ty: {ty}, theta: {theta}")
+  print(f"theta: {theta}")
+
+
 @app.route('/image-retrieval',methods=['POST'])
 @cross_origin()
 def index():
     test_recall, test_precision, test_avg_precision = [], [], []
+    query_image = ""
 
     request.files['image'].save(os.path.abspath(os.curdir + "/uploads/"+str(request.files['image'].filename)))
+
+    with open(os.path.abspath(os.curdir + "/uploads/"+str(request.files['image'].filename)), "rb") as img_file:
+        b64_string = base64.b64encode(img_file.read())
+        query_image = b64_string.decode('utf-8')
 
     recall, precision, avg_precision, correct, result_image, result_relevant, result_distances = show_retrieved_images(os.path.abspath(os.curdir + "/uploads/"+request.files['image'].filename),[b_repository, m_repository], 
                                                                       [b_labels, m_labels], scale, kmeans, 'adenosis', model,800)
@@ -578,4 +727,34 @@ def index():
     # print(f"avg_precision: {avg_precision}")
 
 
-    return jsonify({"image" :result_image, 'relevant_result': result_relevant, 'distances_result': result_distances, 'average_precision': avg_precision})
+    return jsonify({"image" :result_image, 'query_image': query_image, 'relevant_result': result_relevant, 'distances_result': result_distances, 'average_precision': avg_precision})
+
+@app.route('/image-registration',methods=['POST'])
+@cross_origin()
+def image_regis():
+  ref_path = ''
+  trg_path = ''
+  ref_image = ''
+  trg_image = ''
+  request.files['image_reference'].save(os.path.abspath(os.curdir + "/uploads/"+"reference-0.png"))
+  ref_path = os.path.abspath(os.curdir +"/uploads/reference-0.png")
+
+  with open(ref_path, "rb") as img_file:
+      b64_string = base64.b64encode(img_file.read())
+      ref_image = b64_string.decode('utf-8')
+
+  request.files['image_target'].save(os.path.abspath(os.curdir + "/uploads/"+"target-0.png"))
+  trg_path = os.path.abspath(os.curdir +"/uploads/target-0.png")
+
+  with open(trg_path, "rb") as img_file:
+      b64_string = base64.b64encode(img_file.read())
+      trg_image = b64_string.decode('utf-8')
+
+  if request.files['image_reference'] and request.files['image_target'] != 0:
+    registration(ref_path, trg_path, 'sift', 1)
+
+  else:
+    return jsonify({"message" : "Must Upload 2 Image (Reference Image and Target Image)"})
+  
+  
+  return jsonify({"image_reference": ref_image, "image_target": trg_image, "result_image": image_regist_result})
