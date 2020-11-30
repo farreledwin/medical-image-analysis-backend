@@ -52,6 +52,7 @@ train_datas, test_datas = [], []
 result_image = []
 result_relevant = []
 result_distances = []
+clahe_image= ""
 
 def init_dataset(data_list, dirpath):
   for folder, subfolder, file in os.walk(dirpath):
@@ -125,10 +126,15 @@ def getDescriptors(sift, img):
     return des
 
 def readImage(img_path):
+    global clahe_image
     img = cv2.imread(img_path,0)
     # img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)    
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
     img = clahe.apply(img)
+    cv2.imwrite(os.path.abspath(os.curdir +"/uploads/clahe.jpg"),img)
+    with open(os.path.abspath(os.curdir +"/uploads/clahe.jpg"), "rb") as img_file:
+        b64_string = base64.b64encode(img_file.read())
+        clahe_image = b64_string.decode('utf-8')
     return cv2.resize(img,(300,300))
 
 def vstackDescriptors(descriptor_list):
@@ -532,7 +538,7 @@ def show_retrieved_images(query_path, repositories, labels, scaler, kmeans, quer
   #   ax = fig.add_subplot(rows, columns, i)
     showing_label = "Relevant" if query_label == label[i-1] else "Not Relevant"
     result_relevant.append(showing_label)
-    result_distances.append(str(distances[i-1][0])+"-"+" "+str(distances[i-1][1]))
+    result_distances.append(str(distances[i-1][0])+"-"+"<br>"+" "+str(distances[i-1][1]))
   #   precision.append(correct/count)
   #   recall.append(correct/10) # 10 itu relevant count
   #   ax.set_title(f"{label[i-1]}\n {distances[i-1]}")
@@ -552,7 +558,7 @@ def show_retrieved_images(query_path, repositories, labels, scaler, kmeans, quer
       score = score + 1
     if score == 11:
       break
-  return recall_11, precision_11, avg_prec, correct, result_image,result_relevant,result_distances
+  return recall_11, precision_11, avg_prec, correct, result_image,result_relevant,result_distances,label
 
 
   ##################################### IMAGE REGISTRATION #############################################
@@ -698,6 +704,8 @@ def registration(reference_path, target_path, algo='sift', is_clahe=0):
   print(f"tx: {tx}, ty: {ty}, theta: {theta}")
   print(f"theta: {theta}")
 
+  return rmse,tx,ty,theta
+
 
 @app.route('/image-retrieval',methods=['POST'])
 @cross_origin()
@@ -711,7 +719,7 @@ def index():
         b64_string = base64.b64encode(img_file.read())
         query_image = b64_string.decode('utf-8')
 
-    recall, precision, avg_precision, correct, result_image, result_relevant, result_distances = show_retrieved_images(os.path.abspath(os.curdir + "/uploads/"+request.files['image'].filename),[b_repository, m_repository], 
+    recall, precision, avg_precision, correct, result_image, result_relevant, result_distances,label = show_retrieved_images(os.path.abspath(os.curdir + "/uploads/"+request.files['image'].filename),[b_repository, m_repository], 
                                                                       [b_labels, m_labels], scale, kmeans, 'adenosis', model,800)
     print(recall)
     print(precision)
@@ -727,7 +735,7 @@ def index():
     # print(f"avg_precision: {avg_precision}")
 
 
-    return jsonify({"image" :result_image, 'query_image': query_image, 'relevant_result': result_relevant, 'distances_result': result_distances, 'average_precision': avg_precision})
+    return jsonify({"image" :result_image, 'query_image': query_image, 'clahe_image': clahe_image, 'label': label, 'distances_result': result_distances, 'average_precision': avg_precision})
 
 @app.route('/image-registration',methods=['POST'])
 @cross_origin()
@@ -736,6 +744,7 @@ def image_regis():
   trg_path = ''
   ref_image = ''
   trg_image = ''
+  calculation = None
   request.files['image_reference'].save(os.path.abspath(os.curdir + "/uploads/"+"reference-0.png"))
   ref_path = os.path.abspath(os.curdir +"/uploads/reference-0.png")
 
@@ -751,10 +760,16 @@ def image_regis():
       trg_image = b64_string.decode('utf-8')
 
   if request.files['image_reference'] and request.files['image_target'] != 0:
-    registration(ref_path, trg_path, 'sift', 1)
+    rmse,tx,ty,theta = registration(ref_path, trg_path, 'sift', 1)
+    calculation = {
+      "rmse" : rmse,
+      "tx" : tx,
+      "ty" : ty,
+      "theta": theta
+    }
 
   else:
     return jsonify({"message" : "Must Upload 2 Image (Reference Image and Target Image)"})
   
   
-  return jsonify({"image_reference": ref_image, "image_target": trg_image, "result_image": image_regist_result})
+  return jsonify({"image_reference": ref_image, "image_target": trg_image, "result_image": image_regist_result,"calculate": calculation})
