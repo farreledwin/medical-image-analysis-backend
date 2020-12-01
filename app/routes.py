@@ -960,9 +960,9 @@ def wathershed():
         c = max(cnts, key=cv2.contourArea)
         area = cv2.contourArea(c)
         # total_area += area
-        cv2.drawContours(image_binary, [c], -1, (255,255,255), -1)
+        cv2.drawContours(img, [c], -1, (255,0,255), 1)
  
-  return jsonify({"result_image": image_binary})
+  return jsonify({"result_image": img})
 
 
 @app.route('/segmentation/kmeans',methods=['POST'])
@@ -976,18 +976,17 @@ def kmeans_segmentation():
    
     #'/content/drive/MyDrive/Dataset Asli/40X/Benign/adenosis/SOB_B_A-14-22549AB-40-001.png'
     img_selected = cv2.imread(image_path)
-    # elbow(img_selected, 6)
-    k_klusters = request.form.get('k_clusters')
-    result_gray = d2Kmeans(rgb2grey(img_selected), k_klusters)
-    result_img = d2Kmeans(img_selected, k_klusters)
-    klusters_gray = [result_gray == i for i in range(k_klusters)]
-    # plot_any(klusters_gray)
+    #result_gray = d2Kmeans(rgb2grey(img_selected), k_klusters)
+    clusters = [result_gray == i for i in range(k_klusters)]
 
-    index_kluster = select_cluster_index(klusters_gray)
-    selecionado = klusters_gray[index_kluster]
-    new_img = merge_segmented_mask_ROI(img_selected, selecionado)
+    cluster_index = select_cluster_index(clusters)
 
-    image_mean_filter = mean_filter(selecionado, 20)
-    image_binary = binary(image_mean_filter)
- 
-  return jsonify({"result_image": image_binary})    
+    selected_cluster = clusters[cluster_index]
+
+    image_mean_filter = mean_filter(selected_cluster, 20)
+    test_binary = binary(image_mean_filter)
+    test_binary = test_binary.astype('uint8')
+    contours, hierarchy = cv2.findContours(test_binary,cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_NONE)
+    boundary = cv2.drawContours(img_selected, contours, -1, (255,0,255), 1)
+    
+  return jsonify({"result_image": img_selected})    
