@@ -46,6 +46,23 @@ import math
 from skimage import img_as_float
 from skimage.metrics import mean_squared_error as mse
 import staintools
+from skimage.feature import peak_local_max
+from skimage.morphology import watershed
+from scipy import ndimage
+import imutils
+import cv2
+from glob import glob
+from skimage.io import imread
+from skimage.color import rgb2grey
+from sklearn.feature_extraction import image
+from sklearn.cluster import KMeans
+from skimage.filters import rank, threshold_otsu
+from skimage.morphology import closing, square, disk
+from skimage import exposure as hist, data, img_as_float
+from skimage.segmentation import chan_vese
+from skimage.feature import canny
+from skimage.color import rgb2gray
+from scipy import ndimage as ndi 
 # import skimage.metrics.mean_squared_error as mse
 
 train_datas, test_datas = [], []
@@ -815,3 +832,162 @@ def image_process():
       return jsonify({"result_image": img_result_stain_b64})
 
     return request.form.get('valueBtn')
+
+
+# Segmentation
+
+##fungsi pendukung segmentasi
+def binary(image):
+    return image > threshold_otsu(image)
+
+def equalize(image):
+    return hist.equalize_hist(image)
+
+def mean_filter(image, raio_disk):
+    return rank.mean_percentile(image, selem = disk(raio_disk))
+
+def preenche_bords(image):
+    return ndi.binary_fill_holes(image)
+
+def load_images(paths):
+    tmp = []
+    for path in paths:
+        tmp.append(imread(path))
+    return tmp
+    
+def plot_any(arr, title = ''):
+    plt.figure(figsize = (15, 25))
+    for i in range(len(arr)):
+        plt.subplot(1,len(arr),i + 1)
+        plt.title(title)
+        plt.imshow(arr[i],cmap='gray');
+        
+def plot_camadas(img):
+    plt.figure(figsize = (15, 25))
+    for i in range(3):
+        plt.subplot(1, 3, i + 1)
+        plt.imshow(img[:,:,i], cmap = 'gray');
+        
+def d2Kmeans(img, k):
+    return KMeans(n_jobs=-1, 
+                  random_state=1, 
+                  n_clusters = k, 
+                  init='k-means++'
+    ).fit(img.reshape((-1,1))).labels_.reshape(img.shape)
+
+def merge_segmented_mask_ROI(uri_img, img_kluster):
+    new_img = uri_img.copy()
+    for ch in range(3):
+        new_img[:,:, ch] *= img_kluster
+    return new_img
+
+def elbow(img, k):
+    hist = []
+    for kclusters in  range(1, k):
+        Km = KMeans(n_jobs=-1, random_state=1, n_clusters = kclusters, init='k-means++').fit(img.reshape((-1,1)))  
+        hist.append(Km.inertia_)
+        
+    plt.figure(figsize = (15, 8))
+    plt.grid()
+    plt.plot(range(1, k), hist, 'o-')
+    plt.ylabel('Soma das distâncias quadradas')
+    plt.xlabel('k clusters')
+    plt.title('Elbow')
+    plt.show();
+
+def select_cluster_index(clusters):
+    minx = clusters[0].mean()
+    index = 0
+    for i in clusters:
+        if i.mean() < minx:
+            minx = i.mean()
+            index += 1
+    return index
+
+@app.route('/segmentation/watershed',methods=['POST'])
+@cross_origin()
+def wathershed():
+  request.files['image'].save(os.path.abspath(os.curdir + "/uploads/"+str(request.files['image'].filename)))
+  with open(os.path.abspath(os.curdir + "/uploads/"+str(request.files['image'].filename)), "rb") as img_file:
+    b64_string = base64.b64encode(img_file.read())
+    upload_image = b64_string.decode('utf-8')
+    image_path = os.path.abspath(os.curdir + "/uploads/"+str(request.files['image'].filename))
+   
+    img = cv2.imread(image_path)
+    gray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
+    image_binary = np.zeros(gray.shape, dtype=np.uint8)
+    ret, thresh = cv2.threshold(gray,0,255,cv2.THRESH_BINARY_INV+cv2.THRESH_OTSU)
+
+    # noise removal
+    kernel = np.ones((3,3),np.uint8)
+    opening = cv2.morphologyEx(thresh,cv2.MORPH_OPEN,kernel, iterations = 2)
+
+    # sure background area
+    sure_bg = cv2.dilate(opening,kernel,iterations=3)
+
+    # Finding sure foreground area
+    dist_transform = cv2.distanceTransform(opening,cv2.DIST_L2,5)
+    ret, sure_fg = cv2.threshold(dist_transform,0.1*dist_transform.max(),255,0)
+
+    # Finding unknown region
+    sure_fg = np.uint8(sure_fg)
+    unknown = cv2.subtract(sure_bg,sure_fg)
+
+    # Marker labelling
+    ret, markers1 = cv2.connectedComponents(sure_fg)
+
+    # Add one to all labels so that sure background is not 0, but 1
+    markers = markers1 + 20
+
+    # Now, mark the region of unknown with zero
+    markers[unknown==255] = 0
+
+    markers = cv2.watershed(img,markers)
+
+    for i, label in enumerate(np.unique(markers)):
+        if label == 0:
+          continue        
+        if i < 3:
+          continue
+        # Create a mask
+        mask = np.zeros(gray.shape, dtype="uint8")
+        mask[markers == label] = 255
+
+        # Find contours and determine contour area
+        # mask = cv2.bitwise_not(mask)
+        cnts = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        cnts = cnts[0] if len(cnts) == 2 else cnts[1]
+        c = max(cnts, key=cv2.contourArea)
+        area = cv2.contourArea(c)
+        # total_area += area
+        cv2.drawContours(image_binary, [c], -1, (255,255,255), -1)
+ 
+  return jsonify({"result_image": image_binary})
+
+
+@app.route('/segmentation/kmeans',methods=['POST'])
+@cross_origin()
+def kmeans_segmentation():
+  request.files['image'].save(os.path.abspath(os.curdir + "/uploads/"+str(request.files['image'].filename)))
+  with open(os.path.abspath(os.curdir + "/uploads/"+str(request.files['image'].filename)), "rb") as img_file:
+    b64_string = base64.b64encode(img_file.read())
+    upload_image = b64_string.decode('utf-8')
+    image_path = os.path.abspath(os.curdir + "/uploads/"+str(request.files['image'].filename))
+   
+    #'/content/drive/MyDrive/Dataset Asli/40X/Benign/adenosis/SOB_B_A-14-22549AB-40-001.png'
+    img_selected = cv2.imread(image_path)
+    # elbow(img_selected, 6)
+    k_klusters = request.form.get('k_clusters')
+    result_gray = d2Kmeans(rgb2grey(img_selected), k_klusters)
+    result_img = d2Kmeans(img_selected, k_klusters)
+    klusters_gray = [result_gray == i for i in range(k_klusters)]
+    # plot_any(klusters_gray)
+
+    index_kluster = select_cluster_index(klusters_gray)
+    selecionado = klusters_gray[index_kluster]
+    new_img = merge_segmented_mask_ROI(img_selected, selecionado)
+
+    image_mean_filter = mean_filter(selecionado, 20)
+    image_binary = binary(image_mean_filter)
+ 
+  return jsonify({"result_image": image_binary})    
