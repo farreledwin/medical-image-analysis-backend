@@ -45,6 +45,7 @@ from PIL import Image # No need for ImageChops
 import math
 from skimage import img_as_float
 from skimage.metrics import mean_squared_error as mse
+import staintools
 # import skimage.metrics.mean_squared_error as mse
 
 train_datas, test_datas = [], []
@@ -136,6 +137,10 @@ def readImage(img_path):
         b64_string = base64.b64encode(img_file.read())
         clahe_image = b64_string.decode('utf-8')
     return cv2.resize(img,(300,300))
+
+def readImageNoClahe(img_path):
+    img = cv2.imread(img_path,1)
+    return cv2.rezise(img, (300,300))
 
 def vstackDescriptors(descriptor_list):
     descriptors = np.array(descriptor_list[0])
@@ -444,13 +449,13 @@ def perform_search(query_features, query_voc_features, feats, repo_voc_features,
     # d = (d + euclidean(query_color_features, c
     voc_d = euclidean(query_voc_features, repo_voc_features[i])/100
     knn_d = euclidean(knn.predict(query_voc_features), knn.predict(repo_voc_features[i].reshape(1,-1)))
-    temps.append((d, i, voc_d, knn_d))
+    temps.append((d, i))
     temps = sorted(temps)
 
   results = []
   for temp in temps:
-    d, i, voc_d, knn_d = temp
-    results.append((d,i, voc_d, knn_d))
+    d, i = temp
+    results.append((d,i))
   # return results[:10], count
   return results
 
@@ -496,7 +501,7 @@ def show_retrieved_images(query_path, repositories, labels, scaler, kmeans, quer
   label = []
   distances = []
   path_image = []
-  for (d, j, voc_d, knn_d) in results:
+  for (d, j) in results:
     # print(repositories[j])
     count = count + 1
     print(count)
@@ -510,7 +515,7 @@ def show_retrieved_images(query_path, repositories, labels, scaler, kmeans, quer
     recall.append(curr_recall)
     path_image.append(repositories[j])
     images.append(image)
-    distances.append((d, voc_d))
+    distances.append((d))
     if curr_recall == 1:
       break
   print(f"Query:")
@@ -538,7 +543,7 @@ def show_retrieved_images(query_path, repositories, labels, scaler, kmeans, quer
   #   ax = fig.add_subplot(rows, columns, i)
     showing_label = "Relevant" if query_label == label[i-1] else "Not Relevant"
     result_relevant.append(showing_label)
-    result_distances.append(str(distances[i-1][0])+"-"+"<br>"+" "+str(distances[i-1][1]))
+    result_distances.append(str(distances[i-1]))
   #   precision.append(correct/count)
   #   recall.append(correct/10) # 10 itu relevant count
   #   ax.set_title(f"{label[i-1]}\n {distances[i-1]}")
@@ -773,3 +778,40 @@ def image_regis():
   
   
   return jsonify({"image_reference": ref_image, "image_target": trg_image, "result_image": image_regist_result,"calculate": calculation})
+
+@app.route('/image-processing',methods=['POST'])
+@cross_origin()
+def image_process():
+
+    if request.form.get('valueBtn') == "CLAHE":
+      request.files['image'].save(os.path.abspath(os.curdir + "/uploads/"+str(request.files['image'].filename)))
+      with open(os.path.abspath(os.curdir + "/uploads/"+str(request.files['image'].filename)), "rb") as img_file:
+        b64_string = base64.b64encode(img_file.read())
+        upload_image = b64_string.decode('utf-8')
+      readImage(os.path.abspath(os.curdir + "/uploads/"+str(request.files['image'].filename)))
+      return jsonify({"result_image": clahe_image,"upload_image": upload_image})
+
+    elif request.form.get('valueBtn') == "Stain Normalization":
+      request.files['reference_image'].save(os.path.abspath(os.curdir + "/uploads/"+str(request.files['reference_image'].filename)))
+      # source_image = readImageNoClahe(os.path.abspath(os.curdir + "/uploads/"+str(request.files['reference_image'].filename)))
+
+      request.files['target_image'].save(os.path.abspath(os.curdir + "/uploads/"+str(request.files['image'].filename)))
+      # target_image = readImageNoClahe(os.path.abspath(os.curdir + "/uploads/"+str(request.files['target_image'].filename)))
+      target = staintools.read_image(os.path.abspath(os.curdir + "/uploads/"+str(request.files['target_image'].filename)))
+      to_transform = staintools.read_image(os.path.abspath(os.curdir + "/uploads/"+str(request.files['reference_image'].filename)))  
+      standardizer = staintools.BrightnessStandardizer()
+      target = standardizer.transform(target)
+      to_transform = standardizer.transform(to_transform)
+      normalizer = staintools.StainNormalizer(method='vahadane')
+      normalizer.fit(target)
+      transformed = normalizer.transform(to_transform)
+
+      cv2.imwrite(os.path.abspath(os.curdir +"/uploads/result_stain.jpg"),transformed)
+
+      with open(os.path.abspath(os.curdir +"/uploads/result_stain.jpg"), "rb") as img_file:
+          b64_string = base64.b64encode(img_file.read())
+          img_result_stain_b64 = b64_string.decode('utf-8')
+
+      return jsonify({"result_image": img_result_stain_b64})
+
+    return request.form.get('valueBtn')
