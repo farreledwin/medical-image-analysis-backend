@@ -556,8 +556,6 @@ def show_retrieved_images(query_path, repositories, labels, scaler, kmeans, quer
     # if query_label == label[i-1]:
     #   correct = correct + 1        
     img = images[i-1]
-    print("ffffffffeeeeee")
-    print(path_image[i-1])
     with open(path_image[i-1], "rb") as img_file:
           b64_string = base64.b64encode(img_file.read())
           result_image.append(b64_string.decode('utf-8'))
@@ -911,6 +909,7 @@ def select_cluster_index(clusters):
 @app.route('/segmentation/watershed',methods=['POST'])
 @cross_origin()
 def wathershed():
+  watershed_image = ""
   request.files['image'].save(os.path.abspath(os.curdir + "/uploads/"+str(request.files['image'].filename)))
   with open(os.path.abspath(os.curdir + "/uploads/"+str(request.files['image'].filename)), "rb") as img_file:
     b64_string = base64.b64encode(img_file.read())
@@ -965,13 +964,19 @@ def wathershed():
         area = cv2.contourArea(c)
         # total_area += area
         cv2.drawContours(img, [c], -1, (255,0,255), 1)
+        img = cv2.resize(img,(300,300))
+        cv2.imwrite(os.path.abspath(os.curdir + "/uploads/result_watershed.jpg"),img)
+        with open(os.path.abspath(os.curdir + "/uploads/result_watershed.jpg"), "rb") as img_file:
+          b64_string = base64.b64encode(img_file.read())
+          watershed_image = b64_string.decode('utf-8')
  
-  return jsonify({"result_image": img})
+  return jsonify({"result_image": watershed_image})
 
 
 @app.route('/segmentation/kmeans',methods=['POST'])
 @cross_origin()
 def kmeans_segmentation():
+  kmeans_image = ""
   request.files['image'].save(os.path.abspath(os.curdir + "/uploads/"+str(request.files['image'].filename)))
   with open(os.path.abspath(os.curdir + "/uploads/"+str(request.files['image'].filename)), "rb") as img_file:
     b64_string = base64.b64encode(img_file.read())
@@ -992,5 +997,9 @@ def kmeans_segmentation():
     test_binary = test_binary.astype('uint8')
     contours, hierarchy = cv2.findContours(test_binary,cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_NONE)
     boundary = cv2.drawContours(img_selected, contours, -1, (255,0,255), 1)
+    cv2.imwrite(os.path.abspath(os.curdir + "/uploads/result_kmeans.jpg"),img_selected)
+    with open(os.path.abspath(os.curdir + "/uploads/result_kmeans.jpg"), "rb") as img_file:
+          b64_string = base64.b64encode(img_file.read())
+          kmeans_image = b64_string.decode('utf-8')
     
-  return jsonify({"result_image": img_selected})    
+  return jsonify({"result_image": kmeans_image})    
