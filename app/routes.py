@@ -530,7 +530,12 @@ def show_retrieved_images(query_path, repositories, labels, scaler, kmeans, quer
     precision.append(correct/count)
     curr_recall = correct/10
     recall.append(curr_recall)
-    path_image.append(repositories[j])
+    #buat ganti path kalo pake WSL kan linux jadi rada beda
+    edited_string = repositories[j].replace("\\","/")
+    edited_string = edited_string.replace(edited_string[:3],'/mnt/d/')
+    #end
+    print(edited_string)
+    path_image.append(edited_string)
     images.append(image)
     distances.append((d))
     if curr_recall == 1:
@@ -551,6 +556,7 @@ def show_retrieved_images(query_path, repositories, labels, scaler, kmeans, quer
     # if query_label == label[i-1]:
     #   correct = correct + 1        
     img = images[i-1]
+    print("ffffffffeeeeee")
     print(path_image[i-1])
     with open(path_image[i-1], "rb") as img_file:
           b64_string = base64.b64encode(img_file.read())
@@ -656,7 +662,6 @@ def get_homography(img1, img2, algo, is_clahe):
   clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
 
 	# Initialize SIFT 
-  sift = cv2.xfeatures2d.SURF_create()
   if algo == 'sift':
     sift = cv2.xfeatures2d.SIFT_create()
   img1 = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY)
@@ -809,21 +814,20 @@ def image_process():
       return jsonify({"result_image": clahe_image,"upload_image": upload_image})
 
     elif request.form.get('valueBtn') == "Stain Normalization":
+  
       request.files['reference_image'].save(os.path.abspath(os.curdir + "/uploads/"+str(request.files['reference_image'].filename)))
       # source_image = readImageNoClahe(os.path.abspath(os.curdir + "/uploads/"+str(request.files['reference_image'].filename)))
 
-      request.files['target_image'].save(os.path.abspath(os.curdir + "/uploads/"+str(request.files['image'].filename)))
+      request.files['target_image'].save(os.path.abspath(os.curdir + "/uploads/"+str(request.files['target_image'].filename)))
       # target_image = readImageNoClahe(os.path.abspath(os.curdir + "/uploads/"+str(request.files['target_image'].filename)))
       target = staintools.read_image(os.path.abspath(os.curdir + "/uploads/"+str(request.files['target_image'].filename)))
       to_transform = staintools.read_image(os.path.abspath(os.curdir + "/uploads/"+str(request.files['reference_image'].filename)))  
-      standardizer = staintools.BrightnessStandardizer()
-      target = standardizer.transform(target)
-      to_transform = standardizer.transform(to_transform)
+     
       normalizer = staintools.StainNormalizer(method='vahadane')
       normalizer.fit(target)
       transformed = normalizer.transform(to_transform)
-
-      cv2.imwrite(os.path.abspath(os.curdir +"/uploads/result_stain.jpg"),transformed)
+      img_transformed = cv2.resize(transformed,(300,300))
+      cv2.imwrite(os.path.abspath(os.curdir +"/uploads/result_stain.jpg"),img_transformed)
 
       with open(os.path.abspath(os.curdir +"/uploads/result_stain.jpg"), "rb") as img_file:
           b64_string = base64.b64encode(img_file.read())
