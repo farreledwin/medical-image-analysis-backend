@@ -963,8 +963,8 @@ def wathershed():
         c = max(cnts, key=cv2.contourArea)
         area = cv2.contourArea(c)
         # total_area += area
-        cv2.drawContours(img, [c], -1, (255,0,255), 1)
-        img = cv2.resize(img,(300,300))
+        cv2.drawContours(image_binary, [c], -1, (255,255,255), -1) #buat mask
+        cv2.drawContours(img, [c], -1, (0, 0, 255), 1) #buat gambar asli
         cv2.imwrite(os.path.abspath(os.curdir + "/uploads/result_watershed.jpg"),img)
         with open(os.path.abspath(os.curdir + "/uploads/result_watershed.jpg"), "rb") as img_file:
           b64_string = base64.b64encode(img_file.read())
