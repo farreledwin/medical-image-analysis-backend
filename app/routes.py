@@ -976,6 +976,7 @@ def wathershed():
 @app.route('/segmentation/kmeans',methods=['POST'])
 @cross_origin()
 def kmeans_segmentation():
+  clusters_amount =  int(request.form.get("clusters_count"))
   kmeans_image = ""
   request.files['image'].save(os.path.abspath(os.curdir + "/uploads/"+str(request.files['image'].filename)))
   with open(os.path.abspath(os.curdir + "/uploads/"+str(request.files['image'].filename)), "rb") as img_file:
@@ -985,18 +986,16 @@ def kmeans_segmentation():
    
     #'/content/drive/MyDrive/Dataset Asli/40X/Benign/adenosis/SOB_B_A-14-22549AB-40-001.png'
     img_selected = cv2.imread(image_path)
-    #result_gray = d2Kmeans(rgb2grey(img_selected), k_klusters)
-    clusters = [result_gray == i for i in range(k_klusters)]
-
+    result_gray = d2Kmeans(rgb2grey(img_selected), clusters_amount)
+    clusters = [result_gray == i for i in range(clusters_amount)]
     cluster_index = select_cluster_index(clusters)
-
+    
     selected_cluster = clusters[cluster_index]
-
     image_mean_filter = mean_filter(selected_cluster, 20)
     test_binary = binary(image_mean_filter)
     test_binary = test_binary.astype('uint8')
-    contours, hierarchy = cv2.findContours(test_binary,cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_NONE)
-    boundary = cv2.drawContours(img_selected, contours, -1, (255,0,255), 1)
+    contours, hierarchy = cv2.findContours(test_binary,cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_NONE)[-2:]
+    boundary = cv2.drawContours(img_selected, contours, -1, (0, 0, 255), 1)
     cv2.imwrite(os.path.abspath(os.curdir + "/uploads/result_kmeans.jpg"),img_selected)
     with open(os.path.abspath(os.curdir + "/uploads/result_kmeans.jpg"), "rb") as img_file:
           b64_string = base64.b64encode(img_file.read())
