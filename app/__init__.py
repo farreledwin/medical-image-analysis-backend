@@ -4,6 +4,8 @@ import json
 import os 
 from keras.preprocessing.image import array_to_img, img_to_array
 from flask_cors import CORS
+from app.routes import image_blueprints
+from app import controllers
 
 # dir_path = os.path.dirname(os.path.realpath(__file__))
 # json_file = open(dir_path + '/' +'model_ISIC.json', 'r')
@@ -15,6 +17,6 @@ from flask_cors import CORS
 #     model = load_model(json_file)
     
 app = Flask(__name__)
+app.register_blueprint(image_blueprints)
 CORS(app)
-
 from app import routes
