@@ -1,9 +1,11 @@
 from flask import request, jsonify
 from app.helpers.ImageRetrieval import ImageRetrieval
 from app.helpers.ImageRegistration import ImageRegistration
+from app.helpers.ImageEnhancement import ImageEnhancement
 import os
 import base64
 from app.controllers import Helper
+
 def image_retrieval():
     obj = ImageRetrieval()
     test_recall, test_precision, test_avg_precision = [], [], []
@@ -70,3 +72,27 @@ def image_registration():
   
   
   return jsonify({"image_reference": ref_image, "image_target": trg_image, "result_image": image_regist_result,"calculate": calculation})
+
+def imageEnhancement():
+    obj = ImageEnhancement()
+    clahe_image = ""
+    ref_path = ""
+    trg_path = ""
+    if request.form.get('valueBtn') == "CLAHE":
+        request.files['image'].save(os.path.abspath(os.curdir + "/uploads/"+str(request.files['image'].filename)))
+        with open(os.path.abspath(os.curdir + "/uploads/"+str(request.files['image'].filename)), "rb") as img_file:
+          b64_string = base64.b64encode(img_file.read())
+          upload_image = b64_string.decode('utf-8')
+          clahe_image = obj.claheImage(os.path.abspath(os.curdir + "/uploads/"+str(request.files['image'].filename)))
+          return jsonify({"result_image": clahe_image,"upload_image": upload_image})
+
+    elif request.form.get('valueBtn') == "Stain Normalization":
+      request.files['reference_image'].save(os.path.abspath(os.curdir + "/uploads/"+str(request.files['reference_image'].filename)))
+
+      request.files['target_image'].save(os.path.abspath(os.curdir + "/uploads/"+str(request.files['target_image'].filename)))
+      trg_path = os.path.abspath(os.curdir + "/uploads/"+str(request.files['target_image'].filename))
+      ref_path = os.path.abspath(os.curdir + "/uploads/"+str(request.files['reference_image'].filename))
+
+      img_result_stain_b64 = obj.stainImage(trg_path,ref_path)
+
+      return jsonify({"result_image": img_result_stain_b64})
