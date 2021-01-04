@@ -2,6 +2,7 @@ from flask import request, jsonify
 from app.helpers.ImageRetrieval import ImageRetrieval
 from app.helpers.ImageRegistration import ImageRegistration
 from app.helpers.ImageEnhancement import ImageEnhancement
+from app.helpers.ImageSegmentation import ImageSegmentation
 import os
 import base64
 from app.controllers import Helper
@@ -96,3 +97,23 @@ def imageEnhancement():
       img_result_stain_b64 = obj.stainImage(trg_path,ref_path)
 
       return jsonify({"result_image": img_result_stain_b64})
+
+def imageSegmentation():
+    watershed_image = ""
+    kmeans_image = ""
+    obj = ImageSegmentation()
+    request.files['image'].save(os.path.abspath(os.curdir + "/uploads/"+str(request.files['image'].filename)))
+    with open(os.path.abspath(os.curdir + "/uploads/"+str(request.files['image'].filename)), "rb") as img_file:
+      b64_string = base64.b64encode(img_file.read())
+      upload_image = b64_string.decode('utf-8')
+      image_path = os.path.abspath(os.curdir + "/uploads/"+str(request.files['image'].filename))
+      
+      if request.form.get('valueBtn') == "Watershed":
+        watershed_image = obj.wathershed(image_path)
+        return jsonify({"result_image": watershed_image})
+      
+      elif request.form.get('valueBtn') == "K-Means":
+        clusters_amount =  int(request.form.get("clusters_count"))
+        kmeans_image = obj.kmeans_segmentation(image_path,clusters_amount)
+      return jsonify({"result_image": kmeans_image})
+        
