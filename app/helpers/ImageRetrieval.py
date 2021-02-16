@@ -287,7 +287,8 @@ class ImageRetrieval():
             # if query_label == label[i-1]:
             #   correct = correct + 1        
             img = images[i-1]
-            with open(path_image[i-1], "rb") as img_file:
+            relative_path_image = path_image[i-1].replace("/mnt/d/Data Farrel/Kuliah +Ngajar/SKRIPSI/coding/skripsi-backend", ".") 
+            with open(relative_path_image, "rb") as img_file:
                 b64_string = base64.b64encode(img_file.read())
                 result_image.append(b64_string.decode('utf-8'))
         
