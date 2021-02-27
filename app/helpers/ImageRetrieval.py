@@ -5,7 +5,7 @@ import pickle
 import os
 from sklearn.cluster import KMeans, MiniBatchKMeans
 from sklearn.preprocessing import StandardScaler
-from matplotlib import pyplot as plt
+# from matplotlib import pyplot as plt
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import confusion_matrix
 from sklearn.metrics import accuracy_score
@@ -28,7 +28,10 @@ import numpy as np
 import argparse
 import cv2
 from sklearn.cluster import MiniBatchKMeans
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use('Agg')
+
 from scipy.cluster.vq import *
 from sklearn import preprocessing
 import joblib
@@ -180,12 +183,12 @@ class ImageRetrieval():
         x_scalar = np.arange(no_clusters)
         y_scalar = np.array([abs(np.sum(im_features[:,h], dtype=np.int32)) for h in range(no_clusters)])
 
-        plt.bar(x_scalar, y_scalar)
-        plt.xlabel("Visual Word Index")
-        plt.ylabel("Frequency")
-        plt.title("Complete Vocabulary Generated")
-        plt.xticks(x_scalar + 0.4, x_scalar)
-        plt.show()
+        matplotlib.pyplot.bar(x_scalar, y_scalar)
+        matplotlib.pyplot.xlabel("Visual Word Index")
+        matplotlib.pyplot.ylabel("Frequency")
+        matplotlib.pyplot.title("Complete Vocabulary Generated")
+        matplotlib.pyplot.xticks(x_scalar + 0.4, x_scalar)
+        matplotlib.pyplot.show()
 
     def cosine_similarity(self,a, b):
         return dot(a, b)/(norm(a)*norm(b))
@@ -273,13 +276,13 @@ class ImageRetrieval():
                 break
         print(f"Query:")
         print(f"Actual Class : {query_label}")
-        plt.axis('off')
+        matplotlib.pyplot.axis('off')
         img = cv2.imread(query_path)#readImage(query_path)
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-        # plt.imshow(img, cmap='gray')#cv2.cvtColor(cv2.imread(query_path), cv2.COLOR_BGR2RGB))
-        # plt.show()
-        # fig=plt.figure(figsize=(20, 8))
+        # matplotlib.pyplot.imshow(img, cmap='gray')#cv2.cvtColor(cv2.imread(query_path), cv2.COLOR_BGR2RGB))
+        # matplotlib.pyplot.show()
+        # fig=matplotlib.pyplot.figure(figsize=(20, 8))
         columns = 5
         rows = 2
         for i in range(1, columns*rows + 1):
@@ -287,7 +290,8 @@ class ImageRetrieval():
             # if query_label == label[i-1]:
             #   correct = correct + 1        
             img = images[i-1]
-            with open(path_image[i-1], "rb") as img_file:
+            relative_path_image = path_image[i-1].replace("/mnt/d/Data Farrel/Kuliah +Ngajar/SKRIPSI/coding/skripsi-backend", ".") 
+            with open(relative_path_image, "rb") as img_file:
                 b64_string = base64.b64encode(img_file.read())
                 result_image.append(b64_string.decode('utf-8'))
         
@@ -300,10 +304,10 @@ class ImageRetrieval():
         #   recall.append(correct/10) # 10 itu relevant count
         #   ax.set_title(f"{label[i-1]}\n {distances[i-1]}")
         #   ax.set_title(f"{showing_label} \n {distances[i-1][0]} \n {distances[i-1][1]}")
-        #   plt.axis('off')
-        #   plt.imshow(img, cmap='gray')
+        #   matplotlib.pyplot.axis('off')
+        #   matplotlib.pyplot.imshow(img, cmap='gray')
             
-        # plt.show()
+        # matplotlib.pyplot.show()
 
         avg_prec = sum(precision)/count
         recall_11, precision_11 = [], []
