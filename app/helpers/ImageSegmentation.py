@@ -95,18 +95,18 @@ class ImageSegmentation():
         img = cv2.imread(image_path)
         gray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
         image_binary = np.zeros(gray.shape, dtype=np.uint8)
-        ret, thresh = cv2.threshold(gray,0,255,cv2.THRESH_BINARY_INV+cv2.THRESH_OTSU)
-
+        # ret, thresh = cv2.threshold(gray,0,255,cv2.THRESH_BINARY_INV+cv2.THRESH_OTSU)
+        thresh = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY_INV, 719, 20)
         # noise removal
         kernel = np.ones((3,3),np.uint8)
-        opening = cv2.morphologyEx(thresh,cv2.MORPH_OPEN,kernel, iterations = 2)
+        opening = cv2.morphologyEx(thresh,cv2.MORPH_CLOSE,kernel, iterations = 3)
 
         # sure background area
         sure_bg = cv2.dilate(opening,kernel,iterations=3)
 
         # Finding sure foreground area
         dist_transform = cv2.distanceTransform(opening,cv2.DIST_L2,5)
-        ret, sure_fg = cv2.threshold(dist_transform,0.1*dist_transform.max(),255,0)
+        ret, sure_fg = cv2.threshold(dist_transform,0.3*dist_transform.max(),255,0)
 
         # Finding unknown region
         sure_fg = np.uint8(sure_fg)
@@ -140,7 +140,7 @@ class ImageSegmentation():
             area = cv2.contourArea(c)
             # total_area += area
             cv2.drawContours(image_binary, [c], -1, (255,255,255), -1) #buat mask
-            cv2.drawContours(img, [c], -1, (0, 0, 255), 1) #buat gambar asli
+            cv2.drawContours(img, [c], -1, (255,255, 255), 2) #buat gambar asli
             cv2.imwrite(os.path.abspath(os.curdir + "/uploads/result_watershed.jpg"),img)
             with open(os.path.abspath(os.curdir + "/uploads/result_watershed.jpg"), "rb") as img_file:
                 b64_string = base64.b64encode(img_file.read())
@@ -167,7 +167,7 @@ class ImageSegmentation():
             test_binary = self.binary(image_mean_filter)
             test_binary = test_binary.astype('uint8')
             contours, hierarchy = cv2.findContours(test_binary,cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_NONE)[-2:]
-            boundary = cv2.drawContours(img_selected, contours, -1, (0, 0, 255), 1)
+            boundary = cv2.drawContours(img_selected, contours, -1, (255, 255, 255), 2)
             cv2.imwrite(os.path.abspath(os.curdir + "/uploads/result_kmeans.jpg"),img_selected)
             with open(os.path.abspath(os.curdir + "/uploads/result_kmeans.jpg"), "rb") as img_file:
                 b64_string = base64.b64encode(img_file.read())
