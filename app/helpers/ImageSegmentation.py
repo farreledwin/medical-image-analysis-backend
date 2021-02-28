@@ -63,9 +63,10 @@ from skimage.segmentation import chan_vese
 from skimage.feature import canny
 from skimage.color import rgb2gray
 from scipy import ndimage as ndi 
+from app.helpers.ImageProcessing import ImageProcessing 
 
 
-class ImageSegmentation():
+class ImageSegmentation(ImageProcessing):
 
     def d2Kmeans(self,img, k):
         return KMeans(n_jobs=-1, 
@@ -90,10 +91,11 @@ class ImageSegmentation():
         return index
 
     def wathershed(self,image_path):
+        im = ImageProcessing()
         watershed_image = ""
     
-        img = cv2.imread(image_path)
-        gray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
+        im.image = cv2.imread(image_path)
+        gray = cv2.cvtColor(im.image,cv2.COLOR_BGR2GRAY)
         image_binary = np.zeros(gray.shape, dtype=np.uint8)
         # ret, thresh = cv2.threshold(gray,0,255,cv2.THRESH_BINARY_INV+cv2.THRESH_OTSU)
         thresh = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY_INV, 719, 20)
@@ -121,7 +123,7 @@ class ImageSegmentation():
         # Now, mark the region of unknown with zero
         markers[unknown==255] = 0
 
-        markers = cv2.watershed(img,markers)
+        markers = cv2.watershed(im.image,markers)
 
         for i, label in enumerate(np.unique(markers)):
             if label == 0:
@@ -140,25 +142,26 @@ class ImageSegmentation():
             area = cv2.contourArea(c)
             # total_area += area
             cv2.drawContours(image_binary, [c], -1, (255,255,255), -1) #buat mask
-            cv2.drawContours(img, [c], -1, (255,255, 255), 2) #buat gambar asli
-            cv2.imwrite(os.path.abspath(os.curdir + "/uploads/result_watershed.jpg"),img)
+            cv2.drawContours(im.image, [c], -1, (255,255, 255), 2) #buat gambar asli
+            cv2.imwrite(os.path.abspath(os.curdir + "/uploads/result_watershed.jpg"),im.image)
             with open(os.path.abspath(os.curdir + "/uploads/result_watershed.jpg"), "rb") as img_file:
                 b64_string = base64.b64encode(img_file.read())
-                watershed_image = b64_string.decode('utf-8')
+                im.resultImage = b64_string.decode('utf-8')
     
-        return watershed_image
+        return im.resultImage
 
     def kmeans_segmentation(self,image_path,clusters_count):
         clusters_amount =  clusters_count
         kmeans_image = ""
+        im = ImageProcessing()
         with open(image_path, "rb") as img_file:
             b64_string = base64.b64encode(img_file.read())
             upload_image = b64_string.decode('utf-8')
 
         
             #'/content/drive/MyDrive/Dataset Asli/40X/Benign/adenosis/SOB_B_A-14-22549AB-40-001.png'
-            img_selected = cv2.imread(image_path)
-            result_gray = self.d2Kmeans(rgb2grey(img_selected), clusters_amount)
+            im.image = cv2.imread(image_path)
+            result_gray = self.d2Kmeans(rgb2grey(im.image), clusters_amount)
             clusters = [result_gray == i for i in range(clusters_amount)]
             cluster_index = self.select_cluster_index(clusters)
             
@@ -167,10 +170,10 @@ class ImageSegmentation():
             test_binary = self.binary(image_mean_filter)
             test_binary = test_binary.astype('uint8')
             contours, hierarchy = cv2.findContours(test_binary,cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_NONE)[-2:]
-            boundary = cv2.drawContours(img_selected, contours, -1, (255, 255, 255), 2)
-            cv2.imwrite(os.path.abspath(os.curdir + "/uploads/result_kmeans.jpg"),img_selected)
+            boundary = cv2.drawContours(im.image, contours, -1, (255, 255, 255), 2)
+            cv2.imwrite(os.path.abspath(os.curdir + "/uploads/result_kmeans.jpg"),im.image)
             with open(os.path.abspath(os.curdir + "/uploads/result_kmeans.jpg"), "rb") as img_file:
                 b64_string = base64.b64encode(img_file.read())
-                kmeans_image = b64_string.decode('utf-8')
+                im.resultImage = b64_string.decode('utf-8')
             
-            return kmeans_image
+            return im.resultImage
