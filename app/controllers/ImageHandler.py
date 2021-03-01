@@ -61,9 +61,8 @@ def image_registration():
       trg_image = b64_string.decode('utf-8')
 
   if request.files['image_reference'] and request.files['image_target'] != 0:
-    rmse,tx,ty,theta,image_regist_result = obj.registration(ref_path, trg_path, 'sift', 1)
+    tx,ty,theta,image_regist_result = obj.registration(ref_path, trg_path, 'sift', 1)
     calculation = {
-      "rmse" : rmse,
       "tx" : tx,
       "ty" : ty,
       "theta": theta
