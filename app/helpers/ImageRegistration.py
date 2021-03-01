@@ -174,6 +174,11 @@ class ImageRegistration():
             # Use SIFT to find keypoints and return homography matrix
             M =  self.get_homography(img1, img2, algo, is_clahe)
             if M == "fail":
+                cv2.imwrite(os.path.abspath(os.curdir +"/uploads/result.png"),img1)
+
+                with open(os.path.abspath(os.curdir +"/uploads/result.png"), "rb") as img_file:
+                    b64_string = base64.b64encode(img_file.read())
+                    self.image_regist_result = b64_string.decode('utf-8')
                 return 0,0,0,img1
             # Stitch the images together using homography matrix
             result_image, theta, tx, ty, scale_x, scale_y = self.get_stitched_image(img2, img1, M)
