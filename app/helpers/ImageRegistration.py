@@ -116,7 +116,7 @@ class ImageRegistration():
             M, mask = cv2.findHomography(img1_pts, img2_pts, cv2.RANSAC, 5.0)
             return M
         else:
-            exit()
+            return "fail"
 
     def get_stitched_image(self,img1, img2, M):
         # Get width and height of input images	
@@ -173,7 +173,8 @@ class ImageRegistration():
 
             # Use SIFT to find keypoints and return homography matrix
             M =  self.get_homography(img1, img2, algo, is_clahe)
-
+            if M == "fail":
+                return 0,0,0,img1
             # Stitch the images together using homography matrix
             result_image, theta, tx, ty, scale_x, scale_y = self.get_stitched_image(img2, img1, M)
             rmse = self.rmsdiff(img1, cv2.resize(result_image, (img1.shape[1], img1.shape[0])))
@@ -187,4 +188,4 @@ class ImageRegistration():
             print(f"tx: {tx}, ty: {ty}, theta: {theta}")
             print(f"theta: {theta}")
 
-            return rmse,tx,ty,theta,self.image_regist_result
+            return tx,ty,theta,self.image_regist_result
