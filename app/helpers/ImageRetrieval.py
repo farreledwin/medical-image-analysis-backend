@@ -261,9 +261,10 @@ class ImageRetrieval():
             precision.append(correct/count)
             curr_recall = correct/10
             recall.append(curr_recall)
-            #buat ganti path kalo pake WSL kan linux jadi rada beda
+            #buat ganti path kalo pake WSL kan linux jadi rada beda, harus replace soalnya kmrn bikin repo pake laptop farjun
             edited_string = repositories[j].replace("\\","/")
             edited_string = edited_string.replace(edited_string[:3],'/mnt/d/')
+            edited_string = edited_string.replace("/mnt/d/Data Farrel/Kuliah +Ngajar/SKRIPSI/coding/skripsi-backend/","")
             #end
             print(edited_string)
             path_image.append(edited_string)
@@ -273,7 +274,7 @@ class ImageRetrieval():
                 break
         print(f"Query:")
         print(f"Actual Class : {query_label}")
-        plt.axis('off')
+        # plt.axis('off')
         img = cv2.imread(query_path)#readImage(query_path)
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
