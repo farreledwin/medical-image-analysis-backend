@@ -6,6 +6,7 @@ from app.helpers.ImageSegmentation import ImageSegmentation
 import os
 import base64
 from app.controllers import Helper
+from app.helpers.ImageProcessing import ImageProcessing 
 
 def image_retrieval():
     obj = ImageRetrieval()

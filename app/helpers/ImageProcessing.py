@@ -62,36 +62,12 @@ from skimage import exposure as hist, data, img_as_float
 from skimage.segmentation import chan_vese
 from skimage.feature import canny
 from skimage.color import rgb2gray
-from scipy import ndimage as ndi
-from app.helpers.ImageProcessing import ImageProcessing 
+from scipy import ndimage as ndi 
 
-class ImageEnhancement(ImageProcessing):
+class ImageProcessing():
+    _valueBtn = ''
+    _image = ''
+    _resultImage = ''
 
-
-    def claheImage(self,img_path):
-        im = ImageProcessing()
-        im.image = img_path
-        img = cv2.imread(im.image,0)  
-        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
-        img = clahe.apply(img)
-        cv2.imwrite(os.path.abspath(os.curdir +"/uploads/clahe.jpg"),img)
-        with open(os.path.abspath(os.curdir +"/uploads/clahe.jpg"), "rb") as img_file:
-            b64_string = base64.b64encode(img_file.read())
-            im.resultImage = b64_string.decode('utf-8')
-        return im.resultImage
-
-    def stainImage(self,trg_path,ref_path):
-        target = staintools.read_image(trg_path)
-        to_transform = staintools.read_image(ref_path)  
-        im = ImageProcessing()
-        normalizer = staintools.StainNormalizer(method='vahadane')
-        normalizer.fit(target)
-        transformed = normalizer.transform(to_transform)
-        img_transformed = cv2.resize(transformed,(300,300))
-        cv2.imwrite(os.path.abspath(os.curdir +"/uploads/result_stain.jpg"),img_transformed)
-
-        with open(os.path.abspath(os.curdir +"/uploads/result_stain.jpg"), "rb") as img_file:
-            b64_string = base64.b64encode(img_file.read())
-            im.resultImage = b64_string.decode('utf-8')
-
-        return im.resultImage
+    def __init__(self):
+        return None
