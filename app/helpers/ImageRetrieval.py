@@ -242,7 +242,7 @@ class ImageRetrieval():
             repositories = repositories[0]
             labels = labels[0]
         else:    
-            query_features = self.get_query_features(malignant_kmeans, query_path, 300, malignant_scale)
+            query_features = self.get_query_features(Helper.malignant_kmeans, query_path, 300, Helper.malignant_scale)
             results = self.perform_search(predicted_features,query_features, Helper.m_features_repository, Helper.m_im_features, Helper.m_knn)
             repositories = repositories[1]
             labels = labels[1]
