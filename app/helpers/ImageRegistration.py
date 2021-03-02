@@ -165,7 +165,7 @@ class ImageRegistration():
     # """Calculates the root mean square error (RSME) between two images"""
         return math.sqrt(mse(img_as_float(im1), img_as_float(im2)))
 
-    def registration(self,reference_path, target_path, algo='sift', is_clahe=0):
+    def registration(self,target_path, reference_path, algo='sift', is_clahe=0):
                 # Get input set of images
             img1 = cv2.imread(reference_path)
             img2 = cv2.imread(target_path)
